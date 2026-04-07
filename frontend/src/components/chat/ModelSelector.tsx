@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useChatStore } from "@/store/useChatStore";
 import { useDeviceCapability } from "@/hooks/useDeviceCapability";
-import { AVAILABLE_MODELS, type ModelId } from "@/types";
+import { AVAILABLE_MODELS } from "@/types";
 
 interface Props {
   chatId: string;
@@ -30,7 +30,7 @@ export function ModelSelector({ chatId }: Props) {
     <div className="flex items-center gap-2">
       <select
         value={model}
-        onChange={(e) => setModelForChat(chatId, e.target.value as ModelId)}
+        onChange={(e) => setModelForChat(chatId, e.target.value)}
         className="rounded-lg border border-surface-border bg-surface-secondary px-3 py-1.5 text-xs text-slate-300 outline-none transition-colors hover:border-slate-500 focus:border-accent focus:ring-1 focus:ring-accent"
         title="Select AI model"
       >
@@ -52,10 +52,10 @@ export function ModelSelector({ chatId }: Props) {
         </span>
       )}
 
-      {/* Download size hint */}
+      {/* VRAM hint */}
       {selectedDef && (
         <span className="text-xs text-slate-600">
-          ~{selectedDef.downloadGB}GB
+          ~{selectedDef.vramGB.toFixed(1)}GB VRAM
         </span>
       )}
     </div>

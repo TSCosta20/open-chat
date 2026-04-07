@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { useChatStore } from "@/store/useChatStore";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useDeviceCapability } from "@/hooks/useDeviceCapability";
-import { AVAILABLE_MODELS, type ModelId, type ModelDef } from "@/types";
+import { AVAILABLE_MODELS, type ModelDef } from "@/types";
 
 interface Props {
   chatId: string;
@@ -61,7 +61,7 @@ export function ModelPickerScreen({ chatId }: Props) {
               return (
                 <button
                   key={m.id}
-                  onClick={() => !loading && setModelForChat(chatId, m.id as ModelId)}
+                  onClick={() => !loading && setModelForChat(chatId, m.id)}
                   disabled={loading}
                   className={clsx(
                     "w-full rounded-xl border px-4 py-3 text-left transition-colors",
@@ -95,8 +95,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                     </div>
 
                     <div className="text-right text-xs text-slate-500 space-y-0.5">
-                      <div>~{m.downloadGB} GB download</div>
-                      <div>~{m.vramGB} GB VRAM</div>
+                      <div>~{m.vramGB.toFixed(1)} GB VRAM</div>
                     </div>
                   </div>
                 </button>
