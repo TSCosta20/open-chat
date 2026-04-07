@@ -66,6 +66,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 const overBudget = cap.ready && m.vramGB > cap.estimatedVramGB * 0.85;
                 const isSelected = m.id === selectedModel;
                 const isCached = cachedModels.has(m.id);
+                const isFast = m.fast;
 
                 return (
                   <button
@@ -90,6 +91,11 @@ export function ModelPickerScreen({ chatId }: Props) {
                         </span>
                         <div>
                           <span className="text-sm font-medium text-slate-200">{m.name}</span>
+                          {isFast && (
+                            <span className="ml-2 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs text-yellow-400">
+                              fast
+                            </span>
+                          )}
                           {isCached && (
                             <span className="ml-2 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-400">
                               on device

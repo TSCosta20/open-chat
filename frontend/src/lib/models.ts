@@ -7,6 +7,7 @@ export interface ModelDef {
   name: string;
   vramGB: number;
   minRamGB: number;
+  fast?: boolean; // sub-1B models — noticeably faster on most devices
 }
 
 // Models to skip: embedding models, reduced-context (-1k) duplicates,
@@ -101,13 +102,15 @@ export const AVAILABLE_MODELS: ModelDef[] = (() => {
     const isPreferred = m.model_id.includes(PREFERRED_QUANT);
     const isFallback = m.model_id.includes(FALLBACK_QUANT);
 
+    const fast = vramGB <= 0.5; // sub-~500MB models are noticeably snappier
+
     if (!existing) {
       if (isPreferred || isFallback) {
-        seen.set(name, { id: m.model_id, name, vramGB, minRamGB });
+        seen.set(name, { id: m.model_id, name, vramGB, minRamGB, fast });
       }
     } else if (isPreferred && !existing.id.includes(PREFERRED_QUANT)) {
       // Upgrade to preferred quant
-      seen.set(name, { id: m.model_id, name, vramGB, minRamGB });
+      seen.set(name, { id: m.model_id, name, vramGB, minRamGB, fast });
     }
   }
 
