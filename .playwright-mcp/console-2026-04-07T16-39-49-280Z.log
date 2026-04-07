@@ -1,0 +1,12 @@
+[     802ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ https://frontend-tscosta20s-projects.vercel.app/sign-up:0
+[    1084ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://frontend-tscosta20s-projects.vercel.app/favicon.ico:0
+[   29061ms] [ERROR] Access to fetch at 'https://backend-pied-one-10.vercel.app/auth/register' from origin 'https://frontend-tscosta20s-projects.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ https://frontend-tscosta20s-projects.vercel.app/sign-up:0
+[   29062ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://backend-pied-one-10.vercel.app/auth/register:0
+[   29069ms] TypeError: Failed to fetch
+    at m (https://frontend-tscosta20s-projects.vercel.app/_next/static/chunks/app/sign-up/%5B%5B...sign-up%5D%5D/page-042644d55256a01c.js:1:583)
+    at i8 (https://frontend-tscosta20s-projects.vercel.app/_next/static/chunks/4bd1b696-c023c6e3521b1417.js:1:135363)
+    at https://frontend-tscosta20s-projects.vercel.app/_next/static/chunks/4bd1b696-c023c6e3521b1417.js:1:141449
+    at nz (https://frontend-tscosta20s-projects.vercel.app/_next/static/chunks/4bd1b696-c023c6e3521b1417.js:1:19197)
+    at sn (https://frontend-tscosta20s-projects.vercel.app/_next/static/chunks/4bd1b696-c023c6e3521b1417.js:1:136596)
+    at cc (https://frontend-tscosta20s-projects.vercel.app/_next/static/chunks/4bd1b696-c023c6e3521b1417.js:1:163598)
+    at ci (https://frontend-tscosta20s-projects.vercel.app/_next/static/chunks/4bd1b696-c023c6e3521b1417.js:1:163420)

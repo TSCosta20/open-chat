@@ -1,0 +1,15 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Create an account" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Start chatting in seconds
+    - generic [ref=e7]:
+      - textbox "Name (optional)" [ref=e8]: Test User
+      - textbox "Email" [ref=e9]: test@openchat.dev
+      - textbox "Password (min 8 characters)" [ref=e10]: testpass123
+      - button "Creating account…" [disabled] [ref=e15]
+    - paragraph [ref=e12]:
+      - text: Already have an account?
+      - link "Sign in" [ref=e13] [cursor=pointer]:
+        - /url: /sign-in
+  - alert [ref=e14]
