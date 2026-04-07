@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import clsx from "clsx";
 import type { Chat } from "@/types";
 import { useChatStore } from "@/store/useChatStore";
@@ -14,6 +15,7 @@ interface Props {
 
 export function ChatListItem({ chat, isActive }: Props) {
   const router = useRouter();
+  const { getToken } = useAuth();
   const { renameChat: storeRename, removeChat } = useChatStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(chat.title);
@@ -31,7 +33,8 @@ export function ChatListItem({ chat, isActive }: Props) {
       return;
     }
     try {
-      await renameChat(chat.id, trimmed);
+      const token = await getToken();
+      await renameChat(chat.id, trimmed, token ?? undefined);
       storeRename(chat.id, trimmed);
     } catch {
       setEditValue(chat.title);
@@ -43,7 +46,8 @@ export function ChatListItem({ chat, isActive }: Props) {
     e.preventDefault();
     e.stopPropagation();
     try {
-      await deleteChat(chat.id);
+      const token = await getToken();
+      await deleteChat(chat.id, token ?? undefined);
       removeChat(chat.id);
       if (isActive) router.push("/chat");
     } catch {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useChatStore } from "@/store/useChatStore";
@@ -13,24 +13,23 @@ export default function ChatLayout({
   children: React.ReactNode;
 }) {
   const setChats = useChatStore((s) => s.setChats);
+  const { getToken } = useAuth();
 
   // Register service worker
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        // SW registration failure is non-fatal
-      });
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
   }, []);
 
-  // Load chat list on mount
+  // Load chat list on mount — pass auth token
   useEffect(() => {
-    fetchChats()
-      .then(setChats)
-      .catch(() => {
-        // Backend unreachable — UI still loads
-      });
-  }, [setChats]);
+    getToken().then((token) => {
+      fetchChats(token ?? undefined)
+        .then(setChats)
+        .catch(() => {});
+    });
+  }, [setChats, getToken]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">

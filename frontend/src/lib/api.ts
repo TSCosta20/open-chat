@@ -22,44 +22,55 @@ function toMessage(raw: Record<string, unknown>): Message {
   return snakeToCamel(raw) as unknown as Message;
 }
 
+function authHeaders(token?: string): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 // ─── Chats ──────────────────────────────────────────────────────────────────
 
-export async function fetchChats(): Promise<Chat[]> {
-  const res = await fetch(`${API_URL}/chats`);
+export async function fetchChats(token?: string): Promise<Chat[]> {
+  const res = await fetch(`${API_URL}/chats`, {
+    headers: authHeaders(token),
+  });
   if (!res.ok) throw new Error("Failed to fetch chats");
   const data = await res.json();
   return data.map(toChat);
 }
 
-export async function createChat(title = "New Chat"): Promise<Chat> {
+export async function createChat(title = "New Chat", token?: string): Promise<Chat> {
   const res = await fetch(`${API_URL}/chats`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ title }),
   });
   if (!res.ok) throw new Error("Failed to create chat");
   return toChat(await res.json());
 }
 
-export async function renameChat(id: string, title: string): Promise<Chat> {
+export async function renameChat(id: string, title: string, token?: string): Promise<Chat> {
   const res = await fetch(`${API_URL}/chats/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ title }),
   });
   if (!res.ok) throw new Error("Failed to rename chat");
   return toChat(await res.json());
 }
 
-export async function deleteChat(id: string): Promise<void> {
-  const res = await fetch(`${API_URL}/chats/${id}`, { method: "DELETE" });
+export async function deleteChat(id: string, token?: string): Promise<void> {
+  const res = await fetch(`${API_URL}/chats/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
   if (!res.ok) throw new Error("Failed to delete chat");
 }
 
 // ─── Messages ───────────────────────────────────────────────────────────────
 
-export async function fetchMessages(chatId: string): Promise<Message[]> {
-  const res = await fetch(`${API_URL}/messages/${chatId}`);
+export async function fetchMessages(chatId: string, token?: string): Promise<Message[]> {
+  const res = await fetch(`${API_URL}/messages/${chatId}`, {
+    headers: authHeaders(token),
+  });
   if (!res.ok) throw new Error("Failed to fetch messages");
   const data = await res.json();
   return data.map(toMessage);

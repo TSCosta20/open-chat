@@ -4,13 +4,22 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
 from app.schemas import MessageResponse, MessagePersist
+from app.auth import get_user_id
 
 router = APIRouter(tags=["messages"])
 
 
 @router.get("/messages/{chat_id}", response_model=list[MessageResponse])
-def get_messages(chat_id: str, db: Session = Depends(get_db)):
-    chat = db.query(models.Chat).filter(models.Chat.id == chat_id).first()
+def get_messages(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_user_id),
+):
+    chat = (
+        db.query(models.Chat)
+        .filter(models.Chat.id == chat_id, models.Chat.user_id == user_id)
+        .first()
+    )
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     return (
@@ -22,9 +31,18 @@ def get_messages(chat_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/messages/{chat_id}", status_code=201)
-def persist_messages(chat_id: str, body: MessagePersist, db: Session = Depends(get_db)):
+def persist_messages(
+    chat_id: str,
+    body: MessagePersist,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_user_id),
+):
     """Persist a user+assistant message pair after local inference completes."""
-    chat = db.query(models.Chat).filter(models.Chat.id == chat_id).first()
+    chat = (
+        db.query(models.Chat)
+        .filter(models.Chat.id == chat_id, models.Chat.user_id == user_id)
+        .first()
+    )
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 

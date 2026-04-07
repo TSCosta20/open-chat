@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { useChatStore } from "@/store/useChatStore";
 import { useWebLLM } from "@/hooks/useWebLLM";
-import { fetchMessages, renameChat } from "@/lib/api";
+import { renameChat } from "@/lib/api";
 import type { Message } from "@/types";
 
 export function useChat(chatId: string) {
   const store = useChatStore();
   const { generate } = useWebLLM();
+  const { getToken } = useAuth();
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -36,7 +38,6 @@ export function useChat(chatId: string) {
       store.clearStreamingContent(chatId);
 
       try {
-
         // 3. Stream response from local WebLLM engine
         let finalContent = "";
         finalContent = await generate(llmMessages, (token) => {
@@ -54,16 +55,18 @@ export function useChat(chatId: string) {
           };
           store.appendMessage(chatId, assistantMsg);
 
+          const token = await getToken();
+
           // 5. Auto-title chat on first exchange (title is still "New Chat")
           const chat = store.chats.find((c) => c.id === chatId);
           if (chat?.title === "New Chat") {
             const newTitle = content.slice(0, 60) + (content.length > 60 ? "…" : "");
             store.renameChat(chatId, newTitle);
-            renameChat(chatId, newTitle).catch(() => {});
+            renameChat(chatId, newTitle, token ?? undefined).catch(() => {});
           }
 
           // 6. Persist both messages to backend (best-effort)
-          persistMessages(chatId, content, finalContent).catch(() => {});
+          persistMessages(chatId, content, finalContent, token ?? undefined).catch(() => {});
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
@@ -80,17 +83,25 @@ export function useChat(chatId: string) {
         store.setIsStreaming(chatId, false);
       }
     },
-    [chatId, store, generate]
+    [chatId, store, generate, getToken]
   );
 
   return { sendMessage };
 }
 
-async function persistMessages(chatId: string, userContent: string, assistantContent: string) {
+async function persistMessages(
+  chatId: string,
+  userContent: string,
+  assistantContent: string,
+  token?: string,
+) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   await fetch(`${API_URL}/messages/${chatId}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ user: userContent, assistant: assistantContent }),
   });
 }

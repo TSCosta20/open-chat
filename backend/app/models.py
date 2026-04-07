@@ -7,6 +7,7 @@ class Chat(Base):
     __tablename__ = "chats"
 
     id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, nullable=False, index=True)
     title = Column(String, nullable=False, default="New Chat")
     model = Column(String, nullable=False, default="gemma-7b-it")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
