@@ -4,17 +4,25 @@ import { useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useChatStore } from "@/store/useChatStore";
 import { useWebLLM } from "@/hooks/useWebLLM";
+import { useTransformersJS } from "@/hooks/useTransformersJS";
+import { useChromeAI } from "@/hooks/useChromeAI";
 import { renameChat } from "@/lib/api";
 import { speak } from "@/hooks/useVoiceInput";
+import { ALL_MODELS } from "@/types";
 import type { Message } from "@/types";
 
 export function useChat(chatId: string) {
   const store = useChatStore();
-  const { generate } = useWebLLM();
+  const { generate: generateWebLLM } = useWebLLM();
+  const { generate: generateTransformers } = useTransformersJS();
+  const { generate: generateChromeAI } = useChromeAI();
   const { data: session } = useSession();
 
   const sendMessage = useCallback(
     async (content: string, speakResponse = false) => {
+      const selectedModel = useChatStore.getState().getModelForChat(chatId);
+      const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
+
       const existingHistory = useChatStore.getState().messages[chatId] ?? [];
       const llmMessages = [
         ...existingHistory.map((m) => ({
@@ -35,11 +43,29 @@ export function useChat(chatId: string) {
       store.setIsStreaming(chatId, true);
       store.clearStreamingContent(chatId);
 
+      const onToken = (token: string) => store.appendStreamingContent(chatId, token);
+      const token = session?.backendToken;
+      let finalContent = "";
+      let cloudHandledPersist = false;
+
       try {
-        let finalContent = "";
-        finalContent = await generate(llmMessages, (token) => {
-          store.appendStreamingContent(chatId, token);
-        });
+        if (modelDef?.backend === "chrome-ai") {
+          finalContent = await generateChromeAI(llmMessages, onToken);
+        } else if (modelDef?.backend === "cloud") {
+          finalContent = await streamCloud(
+            chatId,
+            content,
+            modelDef.cloudModelId!,
+            token,
+            onToken
+          );
+          cloudHandledPersist = true;
+        } else if (modelDef?.backend === "transformers") {
+          finalContent = await generateTransformers(llmMessages, onToken);
+        } else {
+          // WebLLM (default)
+          finalContent = await generateWebLLM(llmMessages, onToken);
+        }
 
         if (finalContent) {
           const assistantMsg: Message = {
@@ -51,8 +77,6 @@ export function useChat(chatId: string) {
           };
           store.appendMessage(chatId, assistantMsg);
 
-          const token = session?.backendToken;
-
           // Auto-title on first exchange
           const chat = store.chats.find((c) => c.id === chatId);
           if (chat?.title === "New Chat") {
@@ -61,11 +85,12 @@ export function useChat(chatId: string) {
             renameChat(chatId, newTitle, token).catch(() => {});
           }
 
-          // Speak response if in voice mode
           if (speakResponse) speak(finalContent);
 
-          // Persist to backend (best-effort)
-          persistMessages(chatId, content, finalContent, token).catch(() => {});
+          // Cloud backend already persisted both messages; skip for local
+          if (!cloudHandledPersist) {
+            persistMessages(chatId, content, finalContent, token).catch(() => {});
+          }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
@@ -81,17 +106,77 @@ export function useChat(chatId: string) {
         store.setIsStreaming(chatId, false);
       }
     },
-    [chatId, store, generate, session?.backendToken]
+    [chatId, store, generateWebLLM, generateTransformers, generateChromeAI, session?.backendToken]
   );
 
   return { sendMessage };
 }
 
+// ── Cloud inference via backend SSE ──────────────────────────────────────────
+
+async function streamCloud(
+  chatId: string,
+  content: string,
+  cloudModelId: string,
+  authToken: string | undefined,
+  onToken: (t: string) => void
+): Promise<string> {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  const res = await fetch(`${API_URL}/chat/cloud`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    },
+    body: JSON.stringify({ chat_id: chatId, content, model: cloudModelId }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Cloud inference failed" }));
+    throw new Error(err.detail ?? "Cloud inference failed");
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body from cloud endpoint");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") return full;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.token) {
+          full += parsed.token;
+          onToken(parsed.token);
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) continue; // incomplete chunk
+        throw e;
+      }
+    }
+  }
+
+  return full;
+}
+
+// ── Local persistence ─────────────────────────────────────────────────────────
+
 async function persistMessages(
   chatId: string,
   userContent: string,
   assistantContent: string,
-  token?: string,
+  token?: string
 ) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   await fetch(`${API_URL}/messages/${chatId}`, {

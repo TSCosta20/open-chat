@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.database import engine, Base
-from app.routers import chats, messages, auth_routes  # noqa: F401
+from app.routers import chats, messages, auth_routes, gemini
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.add_middleware(
 app.include_router(auth_routes.router)
 app.include_router(chats.router)
 app.include_router(messages.router)
+app.include_router(gemini.router)
 
 
 @app.get("/health")
