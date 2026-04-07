@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useChatStore } from "@/store/useChatStore";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { renameChat } from "@/lib/api";
+import { speak } from "@/hooks/useVoiceInput";
 import type { Message } from "@/types";
 
 export function useChat(chatId: string) {
@@ -13,7 +14,7 @@ export function useChat(chatId: string) {
   const { data: session } = useSession();
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, speakResponse = false) => {
       const existingHistory = useChatStore.getState().messages[chatId] ?? [];
       const llmMessages = [
         ...existingHistory.map((m) => ({
@@ -59,6 +60,9 @@ export function useChat(chatId: string) {
             store.renameChat(chatId, newTitle);
             renameChat(chatId, newTitle, token).catch(() => {});
           }
+
+          // Speak response if in voice mode
+          if (speakResponse) speak(finalContent);
 
           // Persist to backend (best-effort)
           persistMessages(chatId, content, finalContent, token).catch(() => {});

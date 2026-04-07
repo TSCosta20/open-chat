@@ -4,15 +4,18 @@ import { useState, useRef, useCallback } from "react";
 import clsx from "clsx";
 import { useChatStore } from "@/store/useChatStore";
 import { useChat } from "@/hooks/useChat";
+import { useVoiceInput, stopSpeaking } from "@/hooks/useVoiceInput";
 import { ModelSelector } from "./ModelSelector";
 import { ModelLoader } from "./ModelLoader";
 
 interface Props {
   chatId: string;
+  centered?: boolean;
 }
 
-export function InputBar({ chatId }: Props) {
+export function InputBar({ chatId, centered = false }: Props) {
   const [input, setInput] = useState("");
+  const [voiceMode, setVoiceMode] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useChatStore((s) => s.isStreaming[chatId] ?? false);
   const modelReady = useChatStore((s) => s.modelReady);
@@ -20,15 +23,26 @@ export function InputBar({ chatId }: Props) {
 
   const disabled = isStreaming || !modelReady;
 
-  const handleSubmit = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || disabled) return;
-    setInput("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+  const handleSubmit = useCallback(
+    async (text?: string, speak = false) => {
+      const trimmed = (text ?? input).trim();
+      if (!trimmed || disabled) return;
+      setInput("");
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      await sendMessage(trimmed, speak);
+    },
+    [input, disabled, sendMessage]
+  );
+
+  const { isListening, startListening, stopListening, supported } = useVoiceInput(
+    (transcript) => {
+      setInput(transcript);
+      // Auto-submit in voice mode
+      if (voiceMode) {
+        handleSubmit(transcript, true);
+      }
     }
-    await sendMessage(trimmed);
-  }, [input, disabled, sendMessage]);
+  );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -37,52 +51,109 @@ export function InputBar({ chatId }: Props) {
     }
   }
 
-  function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(e.target.value);
     const ta = e.target;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }
 
+  function toggleVoiceMode() {
+    if (voiceMode) {
+      stopSpeaking();
+      stopListening();
+      setVoiceMode(false);
+    } else {
+      setVoiceMode(true);
+      startListening();
+    }
+  }
+
   return (
-    <div className="border-t border-surface-border bg-surface">
-      {/* Model loading progress — shown above input while loading */}
+    <div className={clsx(
+      centered ? "w-full max-w-2xl mx-auto px-4" : "border-t border-surface-border bg-surface"
+    )}>
       <ModelLoader chatId={chatId} />
 
-      <div className="px-4 py-3">
+      <div className={clsx("px-4 py-3", centered && "px-0")}>
         <div className="mx-auto flex max-w-3xl flex-col gap-2">
-          {/* Model selector row */}
           <ModelSelector chatId={chatId} />
 
-          {/* Input row */}
           <div
             className={clsx(
               "flex items-end gap-2 rounded-2xl border bg-surface-secondary px-4 py-2 transition-colors",
               disabled
                 ? "border-surface-border opacity-60"
-                : "border-surface-border focus-within:border-accent"
+                : "border-surface-border focus-within:border-accent",
+              centered && "shadow-lg"
             )}
           >
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={handleInput}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               disabled={disabled}
               rows={1}
               placeholder={
-                !modelReady
+                isListening
+                  ? "Listening…"
+                  : !modelReady
                   ? "Waiting for model to load…"
                   : isStreaming
                   ? "Waiting for response…"
-                  : "Message (Enter to send, Shift+Enter for newline)"
+                  : "Ask anything"
               }
               className="flex-1 resize-none bg-transparent text-sm text-slate-100 placeholder-slate-500 outline-none disabled:cursor-not-allowed"
               style={{ maxHeight: "200px" }}
             />
 
+            {/* Mic button */}
+            {supported && (
+              <button
+                onClick={isListening ? stopListening : (voiceMode ? toggleVoiceMode : startListening)}
+                disabled={disabled}
+                className={clsx(
+                  "mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                  isListening
+                    ? "bg-red-500 text-white animate-pulse"
+                    : voiceMode
+                    ? "bg-accent/20 text-accent"
+                    : "text-slate-500 hover:text-slate-300 disabled:cursor-not-allowed"
+                )}
+                aria-label={isListening ? "Stop listening" : "Voice input"}
+                title={isListening ? "Stop" : voiceMode ? "Voice mode on" : "Voice input"}
+              >
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2H3v2a9 9 0 0 0 8 8.94V22H8v2h8v-2h-3v-1.06A9 9 0 0 0 21 12v-2h-2z" />
+                </svg>
+              </button>
+            )}
+
+            {/* Live conversation toggle */}
+            {supported && (
+              <button
+                onClick={toggleVoiceMode}
+                disabled={disabled}
+                className={clsx(
+                  "mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                  voiceMode
+                    ? "bg-accent text-white"
+                    : "text-slate-500 hover:text-slate-300 disabled:cursor-not-allowed"
+                )}
+                aria-label="Toggle live conversation"
+                title={voiceMode ? "Live conversation on — click to stop" : "Start live conversation"}
+              >
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                </svg>
+              </button>
+            )}
+
+            {/* Send button */}
             <button
-              onClick={handleSubmit}
+              onClick={() => handleSubmit()}
               disabled={disabled || !input.trim()}
               className={clsx(
                 "mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",

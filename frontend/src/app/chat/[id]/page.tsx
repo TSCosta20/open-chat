@@ -18,6 +18,10 @@ export default function ChatPage({ params }: Props) {
   const { setMessages, setActiveChatId, messages } = useChatStore();
   const modelReady = useChatStore((s) => s.modelReady);
 
+  const hasMessages = (messages[id]?.length ?? 0) > 0;
+  const isStreaming = useChatStore((s) => s.isStreaming[id] ?? false);
+  const isEmpty = !hasMessages && !isStreaming;
+
   useEffect(() => {
     setActiveChatId(id);
     return () => setActiveChatId(null);
@@ -31,14 +35,33 @@ export default function ChatPage({ params }: Props) {
     }
   }, [id, messages, setMessages, session?.backendToken]);
 
+  if (!modelReady) {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <ModelPickerScreen chatId={id} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {!modelReady ? (
-        <ModelPickerScreen chatId={id} />
+      {isEmpty ? (
+        /* ChatGPT-style: centered greeting + input */
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 pb-8">
+          <h1 className="text-3xl font-semibold text-white">
+            What&apos;s on your mind today?
+          </h1>
+          <div className="w-full max-w-2xl">
+            <InputBar chatId={id} centered />
+          </div>
+        </div>
       ) : (
-        <ChatWindow chatId={id} />
+        /* Active conversation: messages + bottom input */
+        <>
+          <ChatWindow chatId={id} />
+          <InputBar chatId={id} />
+        </>
       )}
-      <InputBar chatId={id} />
     </div>
   );
 }
