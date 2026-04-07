@@ -12,7 +12,18 @@ export function useChat(chatId: string) {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      // 1. Append optimistic user message
+      // 1. Build conversation history BEFORE appending the new message
+      //    (store snapshot would be stale after appendMessage)
+      const existingHistory = useChatStore.getState().messages[chatId] ?? [];
+      const llmMessages = [
+        ...existingHistory.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+        { role: "user" as const, content },
+      ];
+
+      // 2. Append optimistic user message
       const userMsg: Message = {
         id: crypto.randomUUID(),
         chatId,
@@ -25,13 +36,6 @@ export function useChat(chatId: string) {
       store.clearStreamingContent(chatId);
 
       try {
-        // 2. Persist user message via API (fire & forget for now — we optimistically show it)
-        // Build conversation history for the model
-        const history = store.messages[chatId] ?? [];
-        const llmMessages = history.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        }));
 
         // 3. Stream response from local WebLLM engine
         let finalContent = "";
