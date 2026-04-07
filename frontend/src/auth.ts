@@ -1,18 +1,48 @@
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
+import Credentials from "next-auth/providers/credentials";
 import { SignJWT } from "jose";
 
 const backendSecret = new TextEncoder().encode(process.env.AUTH_SECRET!);
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: [GitHub],
+  providers: [
+    GitHub,
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null;
+        try {
+          const res = await fetch(`${API_URL}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password,
+            }),
+          });
+          if (!res.ok) return null;
+          const user = await res.json();
+          return { id: user.id, email: user.email, name: user.name };
+        } catch {
+          return null;
+        }
+      },
+    }),
+  ],
   pages: {
     signIn: "/sign-in",
   },
   callbacks: {
-    async jwt({ token, account }) {
-      // Generate a backend-compatible HS256 JWT on first sign-in
-      if (account) {
+    async jwt({ token, user, account }) {
+      // Set user id on first sign-in
+      if (user) token.sub = user.id;
+      // Generate backend token on first sign-in
+      if (user || account) {
         token.backendToken = await new SignJWT({ sub: token.sub! })
           .setProtectedHeader({ alg: "HS256" })
           .setIssuedAt()

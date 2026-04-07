@@ -26,12 +26,10 @@ _ssl_ctx = ssl.create_default_context()
 engine = sa.create_engine(DATABASE_URL, connect_args={"ssl_context": _ssl_ctx})
 
 with engine.connect() as conn:
-    # Add user_id column if it doesn't exist
+    # 1. Add user_id column to chats if missing
     result = conn.execute(
-        text(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name='chats' AND column_name='user_id'"
-        )
+        text("SELECT column_name FROM information_schema.columns "
+             "WHERE table_name='chats' AND column_name='user_id'")
     )
     if result.fetchone() is None:
         print("Adding user_id column to chats...")
@@ -40,4 +38,26 @@ with engine.connect() as conn:
         conn.commit()
         print("Done.")
     else:
-        print("user_id column already exists — nothing to do.")
+        print("chats.user_id already exists.")
+
+    # 2. Create users table if missing
+    result = conn.execute(
+        text("SELECT to_regclass('public.users')")
+    )
+    if result.fetchone()[0] is None:
+        print("Creating users table...")
+        conn.execute(text("""
+            CREATE TABLE users (
+                id VARCHAR PRIMARY KEY,
+                email VARCHAR NOT NULL UNIQUE,
+                password_hash VARCHAR NOT NULL,
+                name VARCHAR,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX ix_users_id ON users (id)"))
+        conn.execute(text("CREATE INDEX ix_users_email ON users (email)"))
+        conn.commit()
+        print("Done.")
+    else:
+        print("users table already exists.")

@@ -1,8 +1,34 @@
 "use client";
 
+import { useState } from "react";
 import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function SignInPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+    setLoading(false);
+    if (result?.error) {
+      setError("Invalid email or password.");
+    } else {
+      router.push("/chat");
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface">
       <div className="w-full max-w-sm space-y-6 rounded-2xl border border-surface-border bg-surface-secondary p-8">
@@ -11,6 +37,7 @@ export default function SignInPage() {
           <p className="text-sm text-slate-400">Sign in to continue</p>
         </div>
 
+        {/* GitHub */}
         <button
           onClick={() => signIn("github", { callbackUrl: "/chat" })}
           className="flex w-full items-center justify-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100"
@@ -20,6 +47,47 @@ export default function SignInPage() {
           </svg>
           Continue with GitHub
         </button>
+
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-surface-border" />
+          <span className="text-xs text-slate-500">or</span>
+          <div className="h-px flex-1 bg-surface-border" />
+        </div>
+
+        {/* Email / password */}
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full rounded-xl border border-surface-border bg-surface px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-accent"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="w-full rounded-xl border border-surface-border bg-surface px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-accent"
+          />
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl bg-accent py-3 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-60"
+          >
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+
+        <p className="text-center text-xs text-slate-500">
+          Don&apos;t have an account?{" "}
+          <Link href="/sign-up" className="text-accent hover:underline">
+            Sign up
+          </Link>
+        </p>
       </div>
     </div>
   );

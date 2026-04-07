@@ -1,6 +1,25 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import Literal
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+    name: str = ""
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str | None
+
+    model_config = {"from_attributes": True}
 
 
 class ChatCreate(BaseModel):
