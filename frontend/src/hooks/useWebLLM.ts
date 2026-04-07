@@ -5,15 +5,21 @@ import * as webllm from "@mlc-ai/web-llm";
 import { useChatStore } from "@/store/useChatStore";
 import type { ModelId } from "@/types";
 
-// Singleton engine — persists across renders, survives hot reload in dev
-let _engine: webllm.MLCEngine | null = null;
+// Singleton worker + engine — persists across renders
+let _engine: webllm.WebWorkerMLCEngine | null = null;
 let _loadedModelId: ModelId | null = null;
+let _initPromise: Promise<void> | null = null;
+
+function createWorker(): Worker {
+  return new Worker(new URL("../workers/mlc-worker.ts", import.meta.url), {
+    type: "module",
+  });
+}
 
 export function useWebLLM() {
   const store = useChatStore();
   const abortRef = useRef<AbortController | null>(null);
 
-  // Load (or reuse) a model. Shows progress via store.
   const loadModel = useCallback(
     async (modelId: ModelId) => {
       // Already loaded — nothing to do
@@ -22,32 +28,54 @@ export function useWebLLM() {
         return;
       }
 
+      // Prevent double-init
+      if (_initPromise) {
+        await _initPromise;
+        return;
+      }
+
       store.setModelReady(false);
       store.setModelLoadProgress(0, "Initialising…");
 
-      try {
-        _engine = await webllm.CreateMLCEngine(modelId, {
-          initProgressCallback: (report) => {
-            const pct = Math.round(report.progress * 100);
-            store.setModelLoadProgress(pct, report.text);
-          },
-        });
+      _initPromise = (async () => {
+        try {
+          // Terminate old worker if switching models
+          if (_engine) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (_engine as any).terminate?.();
+            _engine = null;
+          }
 
-        _loadedModelId = modelId as ModelId;
-        store.setModelLoadProgress(100, "Model ready");
-        store.setModelReady(true);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to load model";
-        store.setModelLoadProgress(0, msg);
-        store.setModelReady(false);
-        _engine = null;
-        _loadedModelId = null;
-      }
+          _engine = await webllm.CreateWebWorkerMLCEngine(
+            createWorker(),
+            modelId,
+            {
+              initProgressCallback: (report) => {
+                const pct = Math.round(report.progress * 100);
+                store.setModelLoadProgress(pct, report.text);
+              },
+            }
+          );
+
+          _loadedModelId = modelId as ModelId;
+          store.setModelLoadProgress(100, "Model ready");
+          store.setModelReady(true);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Failed to load model";
+          store.setModelLoadProgress(0, msg);
+          store.setModelReady(false);
+          _engine = null;
+          _loadedModelId = null;
+        } finally {
+          _initPromise = null;
+        }
+      })();
+
+      await _initPromise;
     },
     [store]
   );
 
-  // Generate a streaming response. Calls onToken for each chunk, returns full text.
   const generate = useCallback(
     async (
       messages: { role: "user" | "assistant" | "system"; content: string }[],
@@ -83,7 +111,6 @@ export function useWebLLM() {
     abortRef.current?.abort();
   }, []);
 
-  // On unmount, do NOT destroy the engine — keep it alive for next render
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   return { loadModel, generate, abort };

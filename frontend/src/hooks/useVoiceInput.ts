@@ -4,22 +4,21 @@ import { useCallback, useRef, useState } from "react";
 
 type OnResult = (text: string) => void;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySpeechRecognition = any;
+
 export function useVoiceInput(onResult: OnResult) {
   const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<AnySpeechRecognition>(null);
 
   const startListening = useCallback(() => {
-    const SR =
-      (window as unknown as { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition })
-        .SpeechRecognition ??
-      (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition })
-        .webkitSpeechRecognition;
-
+    if (typeof window === "undefined") return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!SR) return;
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
+    recognitionRef.current?.stop();
 
     const recognition = new SR();
     recognition.continuous = false;
@@ -29,8 +28,8 @@ export function useVoiceInput(onResult: OnResult) {
     recognition.onstart = () => setIsListening(true);
     recognition.onend = () => setIsListening(false);
     recognition.onerror = () => setIsListening(false);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
+    recognition.onresult = (event: AnySpeechRecognition) => {
+      const transcript = event.results[0][0].transcript as string;
       if (transcript.trim()) onResult(transcript.trim());
     };
 
@@ -45,7 +44,8 @@ export function useVoiceInput(onResult: OnResult) {
 
   const supported =
     typeof window !== "undefined" &&
-    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ("SpeechRecognition" in (window as any) || "webkitSpeechRecognition" in (window as any));
 
   return { isListening, startListening, stopListening, supported };
 }
