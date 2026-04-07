@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
 import clsx from "clsx";
 import { useChatStore } from "@/store/useChatStore";
 import { ChatListItem } from "./ChatListItem";
@@ -50,6 +51,7 @@ function ModelStatus() {
 export function Sidebar() {
   const pathname = usePathname();
   const chats = useChatStore((s) => s.chats);
+  const { data: session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
 
   const activeChatId = pathname.startsWith("/chat/")
@@ -106,6 +108,20 @@ export function Sidebar() {
         <div className="border-t border-surface-border px-4 py-3 space-y-3">
           <ModelStatus />
           <p className="text-xs text-slate-600">Runs locally · no data sent to servers</p>
+          {session?.user && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-xs text-slate-400">
+                {session.user.name ?? session.user.email}
+              </span>
+              <button
+                onClick={() => signOut({ callbackUrl: "/sign-in" })}
+                className="shrink-0 rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-surface-hover hover:text-white transition-colors"
+                title="Sign out"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 

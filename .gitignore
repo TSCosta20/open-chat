@@ -1,3 +1,6 @@
+# Test artifacts
+.playwright-mcp/
+
 # Frontend
 frontend/.env.local
 frontend/.next/
