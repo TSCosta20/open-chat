@@ -1,0 +1,111 @@
+import { create } from "zustand";
+import type { Chat, Message, ModelId } from "@/types";
+import { DEFAULT_MODEL } from "@/types";
+
+interface ChatStore {
+  // State
+  chats: Chat[];
+  activeChatId: string | null;
+  messages: Record<string, Message[]>;
+  streamingContent: Record<string, string>;
+  isStreaming: Record<string, boolean>;
+  selectedModel: Record<string, ModelId>;
+
+  // Model load state (global — one engine at a time)
+  modelReady: boolean;
+  modelLoadProgress: number;    // 0–100
+  modelLoadStatus: string;      // human-readable status text
+
+  // Chat list actions
+  setChats: (chats: Chat[]) => void;
+  addChat: (chat: Chat) => void;
+  removeChat: (id: string) => void;
+  renameChat: (id: string, title: string) => void;
+  setActiveChatId: (id: string | null) => void;
+
+  // Message actions
+  setMessages: (chatId: string, messages: Message[]) => void;
+  appendMessage: (chatId: string, message: Message) => void;
+
+  // Streaming actions
+  appendStreamingContent: (chatId: string, token: string) => void;
+  clearStreamingContent: (chatId: string) => void;
+  setIsStreaming: (chatId: string, val: boolean) => void;
+
+  // Model selection
+  setModelForChat: (chatId: string, model: ModelId) => void;
+  getModelForChat: (chatId: string) => ModelId;
+
+  // WebLLM load state
+  setModelReady: (ready: boolean) => void;
+  setModelLoadProgress: (progress: number, status: string) => void;
+}
+
+export const useChatStore = create<ChatStore>((set, get) => ({
+  chats: [],
+  activeChatId: null,
+  messages: {},
+  streamingContent: {},
+  isStreaming: {},
+  selectedModel: {},
+  modelReady: false,
+  modelLoadProgress: 0,
+  modelLoadStatus: "",
+
+  setChats: (chats) => set({ chats }),
+
+  addChat: (chat) =>
+    set((s) => ({ chats: [chat, ...s.chats] })),
+
+  removeChat: (id) =>
+    set((s) => ({
+      chats: s.chats.filter((c) => c.id !== id),
+      activeChatId: s.activeChatId === id ? null : s.activeChatId,
+    })),
+
+  renameChat: (id, title) =>
+    set((s) => ({
+      chats: s.chats.map((c) => (c.id === id ? { ...c, title } : c)),
+    })),
+
+  setActiveChatId: (id) => set({ activeChatId: id }),
+
+  setMessages: (chatId, messages) =>
+    set((s) => ({ messages: { ...s.messages, [chatId]: messages } })),
+
+  appendMessage: (chatId, message) =>
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [chatId]: [...(s.messages[chatId] ?? []), message],
+      },
+    })),
+
+  appendStreamingContent: (chatId, token) =>
+    set((s) => ({
+      streamingContent: {
+        ...s.streamingContent,
+        [chatId]: (s.streamingContent[chatId] ?? "") + token,
+      },
+    })),
+
+  clearStreamingContent: (chatId) =>
+    set((s) => {
+      const next = { ...s.streamingContent };
+      delete next[chatId];
+      return { streamingContent: next };
+    }),
+
+  setIsStreaming: (chatId, val) =>
+    set((s) => ({ isStreaming: { ...s.isStreaming, [chatId]: val } })),
+
+  setModelForChat: (chatId, model) =>
+    set((s) => ({ selectedModel: { ...s.selectedModel, [chatId]: model } })),
+
+  getModelForChat: (chatId) => get().selectedModel[chatId] ?? DEFAULT_MODEL,
+
+  setModelReady: (ready) => set({ modelReady: ready }),
+
+  setModelLoadProgress: (progress, status) =>
+    set({ modelLoadProgress: progress, modelLoadStatus: status }),
+}));
