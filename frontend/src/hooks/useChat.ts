@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useSession } from "next-auth/react";
 import { useChatStore } from "@/store/useChatStore";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { renameChat } from "@/lib/api";
@@ -10,12 +10,10 @@ import type { Message } from "@/types";
 export function useChat(chatId: string) {
   const store = useChatStore();
   const { generate } = useWebLLM();
-  const { getToken } = useAuth();
+  const { data: session } = useSession();
 
   const sendMessage = useCallback(
     async (content: string) => {
-      // 1. Build conversation history BEFORE appending the new message
-      //    (store snapshot would be stale after appendMessage)
       const existingHistory = useChatStore.getState().messages[chatId] ?? [];
       const llmMessages = [
         ...existingHistory.map((m) => ({
@@ -25,7 +23,6 @@ export function useChat(chatId: string) {
         { role: "user" as const, content },
       ];
 
-      // 2. Append optimistic user message
       const userMsg: Message = {
         id: crypto.randomUUID(),
         chatId,
@@ -38,13 +35,11 @@ export function useChat(chatId: string) {
       store.clearStreamingContent(chatId);
 
       try {
-        // 3. Stream response from local WebLLM engine
         let finalContent = "";
         finalContent = await generate(llmMessages, (token) => {
           store.appendStreamingContent(chatId, token);
         });
 
-        // 4. Promote streamed content to a real message
         if (finalContent) {
           const assistantMsg: Message = {
             id: crypto.randomUUID(),
@@ -55,35 +50,34 @@ export function useChat(chatId: string) {
           };
           store.appendMessage(chatId, assistantMsg);
 
-          const token = await getToken();
+          const token = session?.backendToken;
 
-          // 5. Auto-title chat on first exchange (title is still "New Chat")
+          // Auto-title on first exchange
           const chat = store.chats.find((c) => c.id === chatId);
           if (chat?.title === "New Chat") {
             const newTitle = content.slice(0, 60) + (content.length > 60 ? "…" : "");
             store.renameChat(chatId, newTitle);
-            renameChat(chatId, newTitle, token ?? undefined).catch(() => {});
+            renameChat(chatId, newTitle, token).catch(() => {});
           }
 
-          // 6. Persist both messages to backend (best-effort)
-          persistMessages(chatId, content, finalContent, token ?? undefined).catch(() => {});
+          // Persist to backend (best-effort)
+          persistMessages(chatId, content, finalContent, token).catch(() => {});
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
-        const errorMsg: Message = {
+        store.appendMessage(chatId, {
           id: crypto.randomUUID(),
           chatId,
           role: "assistant",
           content: `Sorry, ${msg}. Please try again.`,
           createdAt: new Date().toISOString(),
-        };
-        store.appendMessage(chatId, errorMsg);
+        });
       } finally {
         store.clearStreamingContent(chatId);
         store.setIsStreaming(chatId, false);
       }
     },
-    [chatId, store, generate, getToken]
+    [chatId, store, generate, session?.backendToken]
   );
 
   return { sendMessage };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useSession } from "next-auth/react";
 import { useChatStore } from "@/store/useChatStore";
 import { createChat } from "@/lib/api";
 import type { Chat } from "@/types";
@@ -9,7 +9,7 @@ import type { Chat } from "@/types";
 export function NewChatButton() {
   const router = useRouter();
   const { addChat } = useChatStore();
-  const { getToken } = useAuth();
+  const { data: session } = useSession();
 
   async function handleNew() {
     const localId = crypto.randomUUID();
@@ -25,8 +25,7 @@ export function NewChatButton() {
     router.push(`/chat/${localId}`);
 
     try {
-      const token = await getToken();
-      const real = await createChat("New Chat", token ?? undefined);
+      const real = await createChat("New Chat", session?.backendToken);
       const store = useChatStore.getState();
       store.removeChat(localId);
       store.addChat(real);

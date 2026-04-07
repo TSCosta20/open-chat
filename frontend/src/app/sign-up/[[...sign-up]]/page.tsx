@@ -1,9 +1,6 @@
-import { SignUp } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
 
+// GitHub OAuth handles sign-up automatically — redirect to sign-in
 export default function SignUpPage() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-surface">
-      <SignUp />
-    </div>
-  );
+  redirect("/sign-in");
 }

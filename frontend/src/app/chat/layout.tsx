@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useSession } from "next-auth/react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useChatStore } from "@/store/useChatStore";
@@ -13,7 +13,7 @@ export default function ChatLayout({
   children: React.ReactNode;
 }) {
   const setChats = useChatStore((s) => s.setChats);
-  const { getToken } = useAuth();
+  const { data: session } = useSession();
 
   // Register service worker
   useEffect(() => {
@@ -22,14 +22,11 @@ export default function ChatLayout({
     }
   }, []);
 
-  // Load chat list on mount — pass auth token
+  // Load chat list once we have a session token
   useEffect(() => {
-    getToken().then((token) => {
-      fetchChats(token ?? undefined)
-        .then(setChats)
-        .catch(() => {});
-    });
-  }, [setChats, getToken]);
+    if (!session?.backendToken) return;
+    fetchChats(session.backendToken).then(setChats).catch(() => {});
+  }, [session?.backendToken, setChats]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">

@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useSession } from "next-auth/react";
 import { useChatStore } from "@/store/useChatStore";
 import { fetchMessages } from "@/lib/api";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -14,7 +14,7 @@ interface Props {
 
 export default function ChatPage({ params }: Props) {
   const { id } = use(params);
-  const { getToken } = useAuth();
+  const { data: session } = useSession();
   const { setMessages, setActiveChatId, messages } = useChatStore();
   const modelReady = useChatStore((s) => s.modelReady);
 
@@ -24,15 +24,12 @@ export default function ChatPage({ params }: Props) {
   }, [id, setActiveChatId]);
 
   useEffect(() => {
-    // Only fetch if we don't already have messages cached
-    if (!messages[id]) {
-      getToken().then((token) => {
-        fetchMessages(id, token ?? undefined)
-          .then((msgs) => setMessages(id, msgs))
-          .catch(() => setMessages(id, []));
-      });
+    if (!messages[id] && session?.backendToken) {
+      fetchMessages(id, session.backendToken)
+        .then((msgs) => setMessages(id, msgs))
+        .catch(() => setMessages(id, []));
     }
-  }, [id, messages, setMessages, getToken]);
+  }, [id, messages, setMessages, session?.backendToken]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">

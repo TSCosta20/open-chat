@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useSession } from "next-auth/react";
 import clsx from "clsx";
 import type { Chat } from "@/types";
 import { useChatStore } from "@/store/useChatStore";
@@ -15,7 +15,7 @@ interface Props {
 
 export function ChatListItem({ chat, isActive }: Props) {
   const router = useRouter();
-  const { getToken } = useAuth();
+  const { data: session } = useSession();
   const { renameChat: storeRename, removeChat } = useChatStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(chat.title);
@@ -33,8 +33,7 @@ export function ChatListItem({ chat, isActive }: Props) {
       return;
     }
     try {
-      const token = await getToken();
-      await renameChat(chat.id, trimmed, token ?? undefined);
+      await renameChat(chat.id, trimmed, session?.backendToken);
       storeRename(chat.id, trimmed);
     } catch {
       setEditValue(chat.title);
@@ -46,8 +45,7 @@ export function ChatListItem({ chat, isActive }: Props) {
     e.preventDefault();
     e.stopPropagation();
     try {
-      const token = await getToken();
-      await deleteChat(chat.id, token ?? undefined);
+      await deleteChat(chat.id, session?.backendToken);
       removeChat(chat.id);
       if (isActive) router.push("/chat");
     } catch {
@@ -101,7 +99,6 @@ export function ChatListItem({ chat, isActive }: Props) {
         <span className="flex-1 truncate">{chat.title}</span>
       )}
 
-      {/* Action buttons — shown on hover */}
       {!isEditing && (
         <div className="absolute right-2 hidden gap-1 group-hover:flex">
           <button

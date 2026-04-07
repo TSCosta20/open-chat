@@ -1,57 +1,32 @@
-"""Clerk JWT verification.
+"""Auth.js JWT verification.
 
-Verifies Bearer tokens issued by Clerk and returns the user's sub (user_id).
-JWKS are cached in memory for the lifetime of the process.
+Auth.js signs a custom HS256 JWT (backendToken) with AUTH_SECRET.
+We verify it here and return the user's sub (user_id).
 """
 
 import os
-import httpx
 import jwt
-from functools import lru_cache
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 _bearer = HTTPBearer(auto_error=False)
-
-
-@lru_cache(maxsize=1)
-def _get_jwks() -> dict:
-    clerk_domain = os.environ.get("CLERK_JWT_ISSUER", "").rstrip("/")
-    if not clerk_domain:
-        # Fall back to extracting from CLERK_SECRET_KEY prefix if available
-        # or use publishable key domain hint
-        clerk_domain = os.environ.get("CLERK_DOMAIN", "")
-    jwks_url = f"{clerk_domain}/.well-known/jwks.json"
-    resp = httpx.get(jwks_url, timeout=10)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def _decode_token(token: str) -> dict:
-    jwks = _get_jwks()
-    public_keys = jwt.PyJWKSet.from_dict(jwks)
-    header = jwt.get_unverified_header(token)
-    kid = header.get("kid")
-    key = next((k for k in public_keys.keys if k.key_id == kid), None)
-    if key is None:
-        raise ValueError("No matching key found in JWKS")
-    return jwt.decode(
-        token,
-        key,
-        algorithms=["RS256"],
-        options={"verify_aud": False},
-    )
+_AUTH_SECRET = os.environ.get("AUTH_SECRET", "")
 
 
 def get_user_id(
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
 ) -> str:
-    """FastAPI dependency — returns Clerk user_id or raises 401."""
+    """FastAPI dependency — verifies Auth.js HS256 token, returns user_id."""
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if not _AUTH_SECRET:
+        raise HTTPException(status_code=500, detail="AUTH_SECRET not configured")
     try:
-        payload = _decode_token(credentials.credentials)
-        user_id: str = payload["sub"]
-        return user_id
+        payload = jwt.decode(
+            credentials.credentials,
+            _AUTH_SECRET,
+            algorithms=["HS256"],
+        )
+        return payload["sub"]
     except Exception as exc:
         raise HTTPException(status_code=401, detail=f"Invalid token: {exc}") from exc
