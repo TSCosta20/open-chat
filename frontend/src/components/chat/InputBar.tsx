@@ -7,6 +7,7 @@ import { useChat } from "@/hooks/useChat";
 import { useVoiceInput, stopSpeaking } from "@/hooks/useVoiceInput";
 import { ModelSelector } from "./ModelSelector";
 import { ModelLoader } from "./ModelLoader";
+import { ALL_MODELS } from "@/types";
 
 interface Props {
   chatId: string;
@@ -19,7 +20,16 @@ export function InputBar({ chatId, centered = false }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useChatStore((s) => s.isStreaming[chatId] ?? false);
   const modelReady = useChatStore((s) => s.modelReady);
+  const selectedModel = useChatStore((s) => s.getModelForChat(chatId));
   const { sendMessage } = useChat(chatId);
+
+  const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
+  const disclaimer =
+    modelDef?.backend === "cloud"
+      ? `Responses processed by ${modelDef.cloudModelId?.startsWith("gemini-") ? "Google Gemini" : "OpenRouter"}`
+      : modelDef?.backend === "chrome-ai"
+      ? "Runs in Chrome's built-in AI — no data leaves your device"
+      : "Runs entirely on your device · no data leaves your browser";
 
   const disabled = isStreaming || !modelReady;
 
@@ -176,9 +186,7 @@ export function InputBar({ chatId, centered = false }: Props) {
             </button>
           </div>
 
-          <p className="text-center text-xs text-slate-600">
-            Runs entirely on your device · no data leaves your browser
-          </p>
+          <p className="text-center text-xs text-slate-600">{disclaimer}</p>
         </div>
       </div>
     </div>
