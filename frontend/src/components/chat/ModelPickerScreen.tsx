@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { useChatStore } from "@/store/useChatStore";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useDeviceCapability } from "@/hooks/useDeviceCapability";
+import { useCachedModels } from "@/hooks/useCachedModels";
 import { AVAILABLE_MODELS, type ModelDef } from "@/types";
 
 const PAGE_SIZE = 6;
@@ -21,6 +22,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   const setModelForChat = useChatStore((s) => s.setModelForChat);
   const cap = useDeviceCapability();
   const { loadModel } = useWebLLM();
+  const cachedModels = useCachedModels();
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
 
@@ -63,6 +65,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 const isRecommended = cap.ready && m.id === cap.recommendedModel;
                 const overBudget = cap.ready && m.vramGB > cap.estimatedVramGB * 0.85;
                 const isSelected = m.id === selectedModel;
+                const isCached = cachedModels.has(m.id);
 
                 return (
                   <button
@@ -87,6 +90,11 @@ export function ModelPickerScreen({ chatId }: Props) {
                         </span>
                         <div>
                           <span className="text-sm font-medium text-slate-200">{m.name}</span>
+                          {isCached && (
+                            <span className="ml-2 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-400">
+                              on device
+                            </span>
+                          )}
                           {isRecommended && (
                             <span className="ml-2 rounded-full bg-accent/20 px-2 py-0.5 text-xs text-accent">
                               recommended
@@ -168,7 +176,8 @@ export function ModelPickerScreen({ chatId }: Props) {
                 onClick={handleLoad}
                 className="w-full rounded-xl bg-accent py-3 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
               >
-                Load {AVAILABLE_MODELS.find((m) => m.id === selectedModel)?.name ?? selectedModel}
+                {cachedModels.has(selectedModel) ? "Use " : "Download & load "}
+                {AVAILABLE_MODELS.find((m) => m.id === selectedModel)?.name ?? selectedModel}
               </button>
             )}
           </div>
