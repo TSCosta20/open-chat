@@ -10,6 +10,7 @@ import { useDeviceCapability } from "@/hooks/useDeviceCapability";
 import { useCachedModels } from "@/hooks/useCachedModels";
 import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
 import { checkOllama, type OllamaModelInfo, type OllamaCheckResult } from "@/hooks/useOllama";
+import { getSuggestionsForDevice } from "@/lib/ollamaSuggestions";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import Link from "next/link";
 import { updateChatModel } from "@/lib/api";
@@ -266,49 +267,83 @@ export function ModelPickerScreen({ chatId }: Props) {
                     Retry
                   </button>
                 </div>
-              ) : ollamaList.length === 0 ? (
-                <div className="px-4 py-4 space-y-1">
-                  <p className="text-sm text-slate-300 font-medium">Ollama is running — no models yet</p>
-                  <p className="text-xs text-slate-500">
-                    Pull a model:{" "}
-                    <code className="bg-black/30 px-1 rounded text-slate-300">ollama pull llama3.2</code>
-                  </p>
-                </div>
-              ) : (
-                ollamaList.map((m) => {
-                  const modelId  = `ollama:${m.name}`;
-                  const sizeGB   = m.size / 1024 ** 3;
-                  // Runtime RAM ≈ model file size × 1.3 (quantized models load fully into RAM)
-                  const needsGB  = sizeGB * 1.3;
-                  const heavy    = cap.ready && needsGB > cap.ramBudgetGB;
-                  const isSelected = selectedModel === modelId;
-                  return (
-                    <button
-                      key={m.name}
-                      onClick={heavy ? undefined : () => setModelForChat(chatId, modelId)}
-                      disabled={loading || heavy}
-                      title={heavy ? "This model requires more RAM than your device can safely spare" : undefined}
-                      className={clsx(
-                        "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
-                        isSelected ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
-                        (loading || heavy) && "cursor-not-allowed opacity-50"
-                      )}
-                    >
-                      <span className={clsx(
-                        "h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
-                        isSelected ? "border-accent" : "border-slate-600"
-                      )}>
-                        {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
-                      </span>
-                      <span className="flex-1 flex items-center gap-2 min-w-0">
-                        <span className="text-sm text-slate-200 font-medium truncate">{m.name}</span>
-                        {heavy ? <Pill red>too heavy</Pill> : <Pill green>local</Pill>}
-                      </span>
-                      <span className="text-xs text-slate-500 shrink-0">~{sizeGB.toFixed(1)} GB</span>
-                    </button>
-                  );
-                })
-              )}
+              ) : (() => {
+                const installedNames = new Set(ollamaList.map((m) => m.name));
+                const suggestions = cap.ready
+                  ? getSuggestionsForDevice(cap.ramBudgetGB, installedNames)
+                  : [];
+
+                return <>
+                  {/* Installed models */}
+                  {ollamaList.map((m) => {
+                    const modelId  = `ollama:${m.name}`;
+                    const sizeGB   = m.size / 1024 ** 3;
+                    const needsGB  = sizeGB * 1.3;
+                    const heavy    = cap.ready && needsGB > cap.ramBudgetGB;
+                    const isSelected = selectedModel === modelId;
+                    return (
+                      <button
+                        key={m.name}
+                        onClick={heavy ? undefined : () => setModelForChat(chatId, modelId)}
+                        disabled={loading || heavy}
+                        title={heavy ? "This model requires more RAM than your device can safely spare" : undefined}
+                        className={clsx(
+                          "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                          isSelected ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
+                          (loading || heavy) && "cursor-not-allowed opacity-50"
+                        )}
+                      >
+                        <span className={clsx(
+                          "h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
+                          isSelected ? "border-accent" : "border-slate-600"
+                        )}>
+                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                        </span>
+                        <span className="flex-1 flex items-center gap-2 min-w-0">
+                          <span className="text-sm text-slate-200 font-medium truncate">{m.name}</span>
+                          {heavy ? <Pill red>too heavy</Pill> : <Pill green>installed</Pill>}
+                        </span>
+                        <span className="text-xs text-slate-500 shrink-0">~{sizeGB.toFixed(1)} GB</span>
+                      </button>
+                    );
+                  })}
+
+                  {/* Suggestions */}
+                  {suggestions.length > 0 && <>
+                    <div className="px-4 py-2 bg-black/20">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                        {ollamaList.length === 0 ? "Models that work on your device" : "More models you can run"}
+                      </p>
+                    </div>
+                    {suggestions.map((s) => (
+                      <div
+                        key={s.pull}
+                        className="flex items-start gap-3 px-4 py-2.5 bg-surface-secondary"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-sm text-slate-200 font-medium">{s.label}</span>
+                            {s.tags?.map((t) => (
+                              <span key={t} className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400">{t}</span>
+                            ))}
+                          </div>
+                          <p className="text-xs text-slate-500 mb-1.5">{s.description}</p>
+                          <code className="text-[11px] font-mono text-emerald-400 select-all">
+                            ollama pull {s.pull}
+                          </code>
+                        </div>
+                        <span className="text-xs text-slate-500 shrink-0 mt-0.5">~{s.sizeGB} GB</span>
+                      </div>
+                    ))}
+                  </>}
+
+                  {ollamaList.length === 0 && suggestions.length === 0 && (
+                    <div className="px-4 py-4 text-xs text-slate-500">
+                      No model suggestions available for this device.
+                    </div>
+                  )}
+                </>;
+              })()}
             </>}
 
           </div>
