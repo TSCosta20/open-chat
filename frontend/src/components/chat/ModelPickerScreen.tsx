@@ -9,6 +9,7 @@ import { useTransformersJS } from "@/hooks/useTransformersJS";
 import { useDeviceCapability } from "@/hooks/useDeviceCapability";
 import { useCachedModels } from "@/hooks/useCachedModels";
 import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
+import { checkOllama, type OllamaModelInfo } from "@/hooks/useOllama";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { updateChatModel } from "@/lib/api";
 import {
@@ -20,7 +21,7 @@ import {
 } from "@/types";
 
 const WEBLLM_PAGE_SIZE = 5;
-type Tab = "cloud" | "transformers" | "webllm";
+type Tab = "cloud" | "transformers" | "webllm" | "ollama";
 
 interface Props { chatId: string }
 
@@ -44,6 +45,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [page, setPage]                 = useState(0);
   const [tab, setTab]                   = useState<Tab>(pickerLocalOnly ? "transformers" : "cloud");
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
+  const [ollamaModels, setOllamaModels] = useState<OllamaModelInfo[] | null | "loading">("loading");
   const { openRouterKey, geminiKey, saveOpenRouterKey, saveGeminiKey } = useApiKeys();
   const [orDraft, setOrDraft]           = useState("");
   const [geminiDraft, setGeminiDraft]   = useState("");
@@ -51,23 +53,29 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [geminiSaved, setGeminiSaved]   = useState(false);
 
   useEffect(() => { checkChromeAI().then(setChromeStatus); }, []);
+  useEffect(() => { checkOllama().then(setOllamaModels); }, []);
 
   if (modelReady) return null;
 
   const isNoWebGPU  = cap.ready && !cap.hasWebGPU;
   const totalPages  = Math.ceil(AVAILABLE_MODELS.length / WEBLLM_PAGE_SIZE);
   const pageModels  = AVAILABLE_MODELS.slice(page * WEBLLM_PAGE_SIZE, (page + 1) * WEBLLM_PAGE_SIZE);
+  const ollamaList  = Array.isArray(ollamaModels) ? ollamaModels : [];
   const allDefs     = [CHROME_AI_MODEL, ...CLOUD_MODELS, ...TRANSFORMERS_MODELS, ...AVAILABLE_MODELS];
-  const selectedDef = allDefs.find((m) => m.id === selectedModel);
+  // For Ollama, selectedDef may not be in allDefs — detect by prefix
+  const isOllamaSelected = selectedModel.startsWith("ollama:");
+  const selectedDef = isOllamaSelected ? undefined : allDefs.find((m) => m.id === selectedModel);
 
   async function handleLoad() {
-    if (!selectedDef) return;
+    if (!selectedModel || (!selectedDef && !isOllamaSelected)) return;
     setLoading(true);
     try {
-      if (selectedDef.backend === "chrome-ai" || selectedDef.backend === "cloud") {
+      if (isOllamaSelected) {
         store.setModelReady(true);
-      } else if (selectedDef.backend === "transformers") {
-        await loadTransformers(selectedDef.hfModelId!);
+      } else if (selectedDef!.backend === "chrome-ai" || selectedDef!.backend === "cloud") {
+        store.setModelReady(true);
+      } else if (selectedDef!.backend === "transformers") {
+        await loadTransformers(selectedDef!.hfModelId!);
       } else {
         await loadWebLLM(selectedModel);
       }
@@ -80,6 +88,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   }
 
   function loadLabel() {
+    if (isOllamaSelected) return `Use ${selectedModel.slice(7)}`;
     if (!selectedDef) return "Select a model above";
     if (selectedDef.backend === "chrome-ai" || selectedDef.backend === "cloud")
       return `Use ${selectedDef.name}`;
@@ -91,6 +100,7 @@ export function ModelPickerScreen({ chatId }: Props) {
     ...(!pickerLocalOnly ? [{ id: "cloud" as Tab, label: "Cloud" }] : []),
     { id: "transformers", label: "Transformers.js" },
     { id: "webllm",       label: "WebLLM" },
+    { id: "ollama",       label: "Ollama" },
   ];
 
   return (
@@ -105,14 +115,14 @@ export function ModelPickerScreen({ chatId }: Props) {
         </div>
 
         {/* Tab bar */}
-        <div className="grid grid-cols-3 rounded-xl bg-white/5 p-1 gap-1">
+        <div className="flex rounded-xl bg-white/5 p-1 gap-1">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               disabled={loading}
               className={clsx(
-                "rounded-lg py-2 text-xs font-semibold transition-all",
+                "flex-1 rounded-lg py-2 text-xs font-semibold transition-all",
                 tab === t.id
                   ? "bg-accent text-white shadow"
                   : "text-slate-400 hover:text-white"
@@ -200,6 +210,75 @@ export function ModelPickerScreen({ chatId }: Props) {
                     );
                   })
               }
+            </>}
+
+            {/* ── Ollama ─────────────────────────────────────────── */}
+            {tab === "ollama" && <>
+              {ollamaModels === "loading" ? (
+                <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  Detecting Ollama…
+                </div>
+              ) : ollamaModels === null ? (
+                <div className="px-4 py-4 space-y-1">
+                  <p className="text-sm text-amber-300 font-medium">Ollama not detected</p>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Install Ollama from{" "}
+                    <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-accent underline">
+                      ollama.com
+                    </a>
+                    {" "}and run a model (e.g.{" "}
+                    <code className="bg-black/30 px-1 rounded text-slate-300">ollama run llama3.2</code>
+                    ), then{" "}
+                    <button
+                      onClick={() => { setOllamaModels("loading"); checkOllama().then(setOllamaModels); }}
+                      className="text-accent underline"
+                    >
+                      retry
+                    </button>.
+                  </p>
+                </div>
+              ) : ollamaList.length === 0 ? (
+                <div className="px-4 py-4 space-y-1">
+                  <p className="text-sm text-slate-300 font-medium">Ollama is running — no models yet</p>
+                  <p className="text-xs text-slate-500">
+                    Pull a model:{" "}
+                    <code className="bg-black/30 px-1 rounded text-slate-300">ollama pull llama3.2</code>
+                  </p>
+                </div>
+              ) : (
+                ollamaList.map((m) => {
+                  const modelId = `ollama:${m.name}`;
+                  const sizeGB = (m.size / 1024 ** 3).toFixed(1);
+                  return (
+                    <button
+                      key={m.name}
+                      onClick={() => setModelForChat(chatId, modelId)}
+                      disabled={loading}
+                      className={clsx(
+                        "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                        selectedModel === modelId ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
+                        loading && "cursor-not-allowed opacity-60"
+                      )}
+                    >
+                      <span className={clsx(
+                        "h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
+                        selectedModel === modelId ? "border-accent" : "border-slate-600"
+                      )}>
+                        {selectedModel === modelId && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                      </span>
+                      <span className="flex-1 flex items-center gap-2 min-w-0">
+                        <span className="text-sm text-slate-200 font-medium truncate">{m.name}</span>
+                        <Pill green>local</Pill>
+                      </span>
+                      <span className="text-xs text-slate-500 shrink-0">~{sizeGB} GB</span>
+                    </button>
+                  );
+                })
+              )}
             </>}
 
           </div>
@@ -337,7 +416,7 @@ export function ModelPickerScreen({ chatId }: Props) {
         ) : (
           <button
             onClick={handleLoad}
-            disabled={!selectedDef}
+            disabled={!selectedDef && !isOllamaSelected}
             className="w-full rounded-xl bg-accent py-2.5 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {loadLabel()}

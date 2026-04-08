@@ -1,7 +1,7 @@
 import { prebuiltAppConfig } from "@mlc-ai/web-llm";
 
 export type ModelId = string;
-export type Backend = "chrome-ai" | "cloud" | "transformers" | "webllm";
+export type Backend = "chrome-ai" | "cloud" | "transformers" | "webllm" | "ollama";
 
 export interface ModelDef {
   id: ModelId;

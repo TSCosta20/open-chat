@@ -6,9 +6,10 @@ import { useChatStore } from "@/store/useChatStore";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useTransformersJS } from "@/hooks/useTransformersJS";
 import { useChromeAI } from "@/hooks/useChromeAI";
+import { useOllama } from "@/hooks/useOllama";
 import { renameChat } from "@/lib/api";
 import { speak } from "@/hooks/useVoiceInput";
-import { ALL_MODELS } from "@/types";
+import { ALL_MODELS, AVAILABLE_MODELS, TRANSFORMERS_MODELS } from "@/types";
 import type { Message } from "@/types";
 import { getStoredApiKeys } from "@/hooks/useApiKeys";
 
@@ -23,6 +24,7 @@ export function useChat(chatId: string) {
   const { generate: generateWebLLM, abort: abortWebLLM } = useWebLLM();
   const { generate: generateTransformers, abort: abortTransformers } = useTransformersJS();
   const { generate: generateChromeAI } = useChromeAI();
+  const { generate: generateOllama } = useOllama();
   const { data: session } = useSession();
 
   const sendMessage = useCallback(
@@ -31,7 +33,7 @@ export function useChat(chatId: string) {
       const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
 
       const existingHistory = (useChatStore.getState().messages[chatId] ?? [])
-        .filter((m) => m.content !== "__SUGGEST_LOCAL__" && m.content !== "__TOO_HEAVY__");
+        .filter((m) => !["__SUGGEST_LOCAL__", "__TOO_HEAVY__", "__SWITCHED_TO_CLOUD__"].includes(m.content));
       const llmMessages = [
         ...existingHistory.map((m) => ({
           role: m.role as "user" | "assistant",
@@ -57,7 +59,10 @@ export function useChat(chatId: string) {
       let cloudHandledPersist = false;
 
       try {
-        if (modelDef?.backend === "chrome-ai") {
+        if (selectedModel.startsWith("ollama:")) {
+          const ollamaModelName = selectedModel.slice(7);
+          finalContent = await generateOllama(ollamaModelName, llmMessages, onToken);
+        } else if (modelDef?.backend === "chrome-ai") {
           finalContent = await generateChromeAI(llmMessages, onToken);
         } else if (modelDef?.backend === "cloud") {
           const { openRouterKey, geminiKey } = getStoredApiKeys();
@@ -142,25 +147,57 @@ export function useChat(chatId: string) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
         const isSuggestLocal = msg.includes("suggest_local");
-        const isTooHeavy = msg === "__TOO_HEAVY__";
-        store.appendMessage(chatId, {
-          id: crypto.randomUUID(),
-          chatId,
-          role: "assistant",
-          content: isTooHeavy
-            ? "__TOO_HEAVY__"
-            : isSuggestLocal
-            ? "__SUGGEST_LOCAL__"
-            : `Sorry, ${msg}. Please try again.`,
-          createdAt: new Date().toISOString(),
-        });
+        const isTooHeavy =
+          msg === "__TOO_HEAVY__" ||
+          msg.includes("OrtRun") ||
+          msg.includes("Device is lost") ||
+          msg.includes("GPUBuffer") ||
+          msg.includes("mapAsync");
+
+        if (isTooHeavy) {
+          // Check if there's any lighter local model available
+          const currentModel = useChatStore.getState().getModelForChat(chatId);
+          const currentDef = ALL_MODELS.find((m) => m.id === currentModel);
+          const currentVram = currentDef?.vramGB ?? Infinity;
+          const allLocal = [...TRANSFORMERS_MODELS, ...AVAILABLE_MODELS];
+          const hasLighter = allLocal.some((m) => m.vramGB < currentVram);
+
+          if (!hasLighter) {
+            // No lighter local model — silently switch to cloud
+            store.setModelForChat(chatId, "cloud:openrouter:auto");
+            store.setModelReady(true);
+            store.appendMessage(chatId, {
+              id: crypto.randomUUID(),
+              chatId,
+              role: "assistant",
+              content: "__SWITCHED_TO_CLOUD__",
+              createdAt: new Date().toISOString(),
+            });
+          } else {
+            store.appendMessage(chatId, {
+              id: crypto.randomUUID(),
+              chatId,
+              role: "assistant",
+              content: "__TOO_HEAVY__",
+              createdAt: new Date().toISOString(),
+            });
+          }
+        } else {
+          store.appendMessage(chatId, {
+            id: crypto.randomUUID(),
+            chatId,
+            role: "assistant",
+            content: isSuggestLocal ? "__SUGGEST_LOCAL__" : `Sorry, ${msg}. Please try again.`,
+            createdAt: new Date().toISOString(),
+          });
+        }
       } finally {
         store.clearStreamingContent(chatId);
         store.setIsStreaming(chatId, false);
         store.setCloudStatus(chatId, "");
       }
     },
-    [chatId, store, generateWebLLM, generateTransformers, generateChromeAI, session?.backendToken]
+    [chatId, store, generateWebLLM, generateTransformers, generateChromeAI, generateOllama, session?.backendToken]
   );
 
   return { sendMessage };

@@ -66,8 +66,9 @@ interface Props {
 export function MessageBubble({ message }: Props) {
   const isUser = message.role === "user";
 
-  if (message.content === "__SUGGEST_LOCAL__") return <SuggestLocalBubble />;
-  if (message.content === "__TOO_HEAVY__")     return <TooHeavyBubble />;
+  if (message.content === "__SUGGEST_LOCAL__")    return <SuggestLocalBubble />;
+  if (message.content === "__TOO_HEAVY__")        return <TooHeavyBubble />;
+  if (message.content === "__SWITCHED_TO_CLOUD__") return <SwitchedToCloudBubble />;
 
   return (
     <div
@@ -169,6 +170,22 @@ function SuggestLocalBubble() {
           </svg>
           Switch to on-device model
         </button>
+      </div>
+    </div>
+  );
+}
+
+function SwitchedToCloudBubble() {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-600 text-xs font-bold text-slate-300">
+        AI
+      </div>
+      <div className="max-w-[75%] rounded-2xl rounded-tl-sm border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-200 space-y-2">
+        <p className="font-semibold">Switched to cloud automatically</p>
+        <p className="text-blue-300/80">
+          No lighter on-device model is available for your device. Responses will now be handled by cloud inference.
+        </p>
       </div>
     </div>
   );

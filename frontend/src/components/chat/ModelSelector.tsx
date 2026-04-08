@@ -11,8 +11,9 @@ export function ModelSelector({ chatId }: Props) {
   const model = useChatStore((s) => s.getModelForChat(chatId));
   const setModelReady = useChatStore((s) => s.setModelReady);
   const modelDef = ALL_MODELS.find((m) => m.id === model);
+  const isOllama = model.startsWith("ollama:");
 
-  const name = modelDef?.name ?? model;
+  const name = isOllama ? model.slice(7) : (modelDef?.name ?? model);
   const isCloud = modelDef?.backend === "cloud" || modelDef?.backend === "chrome-ai";
 
   return (
