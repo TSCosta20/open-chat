@@ -7,18 +7,40 @@ export interface OllamaModelInfo {
   size: number; // bytes
 }
 
-/** Returns the list of locally installed Ollama models, or null if Ollama isn't running. */
-export async function checkOllama(): Promise<OllamaModelInfo[] | null> {
+export type OllamaCheckResult =
+  | { status: "ok"; models: OllamaModelInfo[] }
+  | { status: "cors" }
+  | { status: "unavailable" };
+
+/** Returns the list of locally installed Ollama models, or a status describing why it failed. */
+export async function checkOllama(): Promise<OllamaCheckResult> {
   try {
     const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(3000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { status: "unavailable" };
     const data = await res.json();
-    return (data.models ?? []) as OllamaModelInfo[];
-  } catch {
-    return null;
+    return { status: "ok", models: (data.models ?? []) as OllamaModelInfo[] };
+  } catch (e) {
+    // A TypeError with "Failed to fetch" typically means CORS or network error.
+    // If the server isn't running at all we also get TypeError — we can't
+    // distinguish reliably in the browser, so we show CORS instructions when
+    // the page is not on localhost (most likely culprit in that case).
+    const isLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1");
+    if (!isLocalhost && e instanceof TypeError) {
+      return { status: "cors" };
+    }
+    return { status: "unavailable" };
   }
+}
+
+/** @deprecated use checkOllama() which returns richer status */
+export async function checkOllamaSimple(): Promise<OllamaModelInfo[] | null> {
+  const r = await checkOllama();
+  return r.status === "ok" ? r.models : null;
 }
 
 export function useOllama() {

@@ -9,7 +9,7 @@ import { useTransformersJS } from "@/hooks/useTransformersJS";
 import { useDeviceCapability } from "@/hooks/useDeviceCapability";
 import { useCachedModels } from "@/hooks/useCachedModels";
 import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
-import { checkOllama, type OllamaModelInfo } from "@/hooks/useOllama";
+import { checkOllama, type OllamaModelInfo, type OllamaCheckResult } from "@/hooks/useOllama";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { updateChatModel } from "@/lib/api";
 import {
@@ -45,7 +45,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [page, setPage]                 = useState(0);
   const [tab, setTab]                   = useState<Tab>(pickerLocalOnly ? "transformers" : "cloud");
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
-  const [ollamaModels, setOllamaModels] = useState<OllamaModelInfo[] | null | "loading">("loading");
+  const [ollamaResult, setOllamaResult] = useState<OllamaCheckResult | "loading">("loading");
   const { openRouterKey, geminiKey, saveOpenRouterKey, saveGeminiKey } = useApiKeys();
   const [orDraft, setOrDraft]           = useState("");
   const [geminiDraft, setGeminiDraft]   = useState("");
@@ -53,14 +53,14 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [geminiSaved, setGeminiSaved]   = useState(false);
 
   useEffect(() => { checkChromeAI().then(setChromeStatus); }, []);
-  useEffect(() => { checkOllama().then(setOllamaModels); }, []);
+  useEffect(() => { checkOllama().then(setOllamaResult); }, []);
 
   if (modelReady) return null;
 
   const isNoWebGPU  = cap.ready && !cap.hasWebGPU;
   const totalPages  = Math.ceil(AVAILABLE_MODELS.length / WEBLLM_PAGE_SIZE);
   const pageModels  = AVAILABLE_MODELS.slice(page * WEBLLM_PAGE_SIZE, (page + 1) * WEBLLM_PAGE_SIZE);
-  const ollamaList  = Array.isArray(ollamaModels) ? ollamaModels : [];
+  const ollamaList  = ollamaResult !== "loading" && ollamaResult.status === "ok" ? ollamaResult.models : [];
   const allDefs     = [CHROME_AI_MODEL, ...CLOUD_MODELS, ...TRANSFORMERS_MODELS, ...AVAILABLE_MODELS];
   // For Ollama, selectedDef may not be in allDefs — detect by prefix
   const isOllamaSelected = selectedModel.startsWith("ollama:");
@@ -214,7 +214,7 @@ export function ModelPickerScreen({ chatId }: Props) {
 
             {/* ── Ollama ─────────────────────────────────────────── */}
             {tab === "ollama" && <>
-              {ollamaModels === "loading" ? (
+              {ollamaResult === "loading" ? (
                 <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
                   <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -222,24 +222,42 @@ export function ModelPickerScreen({ chatId }: Props) {
                   </svg>
                   Detecting Ollama…
                 </div>
-              ) : ollamaModels === null ? (
-                <div className="px-4 py-4 space-y-1">
+              ) : ollamaResult.status === "cors" ? (
+                <div className="px-4 py-4 space-y-2">
+                  <p className="text-sm text-amber-300 font-medium">Ollama is running but blocked by CORS</p>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Ollama needs to allow this page's origin. Restart Ollama with:
+                  </p>
+                  <code className="block bg-black/40 rounded-lg px-3 py-2 text-xs text-emerald-300 font-mono select-all">
+                    OLLAMA_ORIGINS="*" ollama serve
+                  </code>
+                  <p className="text-xs text-slate-500">
+                    On Windows, set the environment variable in System Settings → Environment Variables, then restart Ollama from the taskbar.
+                  </p>
+                  <button
+                    onClick={() => { setOllamaResult("loading"); checkOllama().then(setOllamaResult); }}
+                    className="text-xs text-accent underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : ollamaResult.status === "unavailable" ? (
+                <div className="px-4 py-4 space-y-2">
                   <p className="text-sm text-amber-300 font-medium">Ollama not detected</p>
                   <p className="text-xs text-slate-500 leading-relaxed">
-                    Install Ollama from{" "}
-                    <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-accent underline">
-                      ollama.com
-                    </a>
-                    {" "}and run a model (e.g.{" "}
-                    <code className="bg-black/30 px-1 rounded text-slate-300">ollama run llama3.2</code>
-                    ), then{" "}
-                    <button
-                      onClick={() => { setOllamaModels("loading"); checkOllama().then(setOllamaModels); }}
-                      className="text-accent underline"
-                    >
-                      retry
-                    </button>.
+                    Install from{" "}
+                    <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-accent underline">ollama.com</a>
+                    , then run a model:
                   </p>
+                  <code className="block bg-black/40 rounded-lg px-3 py-2 text-xs text-emerald-300 font-mono">
+                    ollama run llama3.2
+                  </code>
+                  <button
+                    onClick={() => { setOllamaResult("loading"); checkOllama().then(setOllamaResult); }}
+                    className="text-xs text-accent underline"
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : ollamaList.length === 0 ? (
                 <div className="px-4 py-4 space-y-1">
