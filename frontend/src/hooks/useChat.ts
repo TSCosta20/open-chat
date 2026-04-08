@@ -25,7 +25,8 @@ export function useChat(chatId: string) {
       const selectedModel = useChatStore.getState().getModelForChat(chatId);
       const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
 
-      const existingHistory = useChatStore.getState().messages[chatId] ?? [];
+      const existingHistory = (useChatStore.getState().messages[chatId] ?? [])
+        .filter((m) => m.content !== "__SUGGEST_LOCAL__");
       const llmMessages = [
         ...existingHistory.map((m) => ({
           role: m.role as "user" | "assistant",

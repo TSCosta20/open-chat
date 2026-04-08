@@ -47,6 +47,10 @@ interface ChatStore {
   cloudStatus: Record<string, string>;
   setCloudStatus: (chatId: string, status: string) => void;
 
+  // When true, model picker opens on local tab with cloud hidden
+  pickerLocalOnly: boolean;
+  setPickerLocalOnly: (val: boolean) => void;
+
   // Model selection
   setModelForChat: (chatId: string, model: ModelId) => void;
   getModelForChat: (chatId: string) => ModelId;
@@ -117,6 +121,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setCloudStatus: (chatId, status) =>
     set((s) => ({ cloudStatus: { ...s.cloudStatus, [chatId]: status } })),
+
+  pickerLocalOnly: false,
+  setPickerLocalOnly: (val) => set({ pickerLocalOnly: val }),
 
   setModelForChat: (chatId, model) => {
     saveLastModel(model);

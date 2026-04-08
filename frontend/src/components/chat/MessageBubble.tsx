@@ -113,7 +113,13 @@ interface StreamingBubbleProps {
 }
 
 function SuggestLocalBubble() {
-  const setModelReady = useChatStore((s) => s.setModelReady);
+  const setModelReady      = useChatStore((s) => s.setModelReady);
+  const setPickerLocalOnly = useChatStore((s) => s.setPickerLocalOnly);
+
+  function handleSwitch() {
+    setPickerLocalOnly(true);
+    setModelReady(false);
+  }
 
   return (
     <div className="flex items-start gap-3 px-4 py-3">
@@ -126,7 +132,7 @@ function SuggestLocalBubble() {
           on-device model that runs entirely in your browser — no internet needed.
         </p>
         <button
-          onClick={() => setModelReady(false)}
+          onClick={handleSwitch}
           className="flex items-center gap-2 rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

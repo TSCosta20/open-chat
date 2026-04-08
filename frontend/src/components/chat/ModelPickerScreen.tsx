@@ -34,9 +34,12 @@ export function ModelPickerScreen({ chatId }: Props) {
   const { loadModel: loadTransformers } = useTransformersJS();
   const cachedModels  = useCachedModels();
 
+  const pickerLocalOnly = useChatStore((s) => s.pickerLocalOnly);
+  const setPickerLocalOnly = useChatStore((s) => s.setPickerLocalOnly);
+
   const [loading, setLoading]           = useState(false);
   const [page, setPage]                 = useState(0);
-  const [tab, setTab]                   = useState<Tab>("cloud");
+  const [tab, setTab]                   = useState<Tab>(pickerLocalOnly ? "transformers" : "cloud");
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
   const { openRouterKey, geminiKey, saveOpenRouterKey, saveGeminiKey } = useApiKeys();
   const [orDraft, setOrDraft]           = useState("");
@@ -65,6 +68,7 @@ export function ModelPickerScreen({ chatId }: Props) {
       } else {
         await loadWebLLM(selectedModel);
       }
+      setPickerLocalOnly(false);
     } finally {
       setLoading(false);
     }
@@ -79,7 +83,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   }
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: "cloud",        label: "Cloud" },
+    ...(!pickerLocalOnly ? [{ id: "cloud" as Tab, label: "Cloud" }] : []),
     { id: "transformers", label: "Transformers.js" },
     { id: "webllm",       label: "WebLLM" },
   ];
