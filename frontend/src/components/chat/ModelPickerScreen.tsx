@@ -11,6 +11,7 @@ import { useCachedModels } from "@/hooks/useCachedModels";
 import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
 import { checkOllama, type OllamaModelInfo, type OllamaCheckResult } from "@/hooks/useOllama";
 import { useApiKeys } from "@/hooks/useApiKeys";
+import Link from "next/link";
 import { updateChatModel } from "@/lib/api";
 import {
   AVAILABLE_MODELS,
@@ -440,6 +441,13 @@ export function ModelPickerScreen({ chatId }: Props) {
             {loadLabel()}
           </button>
         )}
+
+        <p className="text-center text-[11px] text-slate-600">
+          Not sure where to start?{" "}
+          <Link href="/setup" className="text-accent underline hover:text-accent-hover">
+            Step-by-step setup guide
+          </Link>
+        </p>
 
         {cap.ready && (
           <p className="text-center text-[11px] text-slate-600">
