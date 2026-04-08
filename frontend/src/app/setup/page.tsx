@@ -279,13 +279,72 @@ function AndroidGuide() {
             </div>
           </div>
 
-          {/* Everyday use tip */}
-          <div className="rounded-xl bg-white/5 px-4 py-3 space-y-2">
-            <p className="text-xs font-semibold text-slate-300">Every time you want to use local AI</p>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Open Termux and run <code className="bg-black/30 px-1 rounded text-slate-300">ollama serve</code>,
-              then minimise Termux and open this app. That is all you need to do after the setup above.
+          {/* Everyday use */}
+          <div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+              Part 4 — Everyday use (pick one)
             </p>
+
+            {/* Option A: Manual */}
+            <div className="rounded-xl bg-white/5 px-4 py-3 space-y-2 mb-3">
+              <p className="text-xs font-semibold text-slate-300">
+                Option A — Start manually (recommended, no background impact)
+              </p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Whenever you want to use local AI, open Termux, run{" "}
+                <code className="bg-black/30 px-1 rounded text-slate-300">ollama serve</code>,
+                then press Home and open this app. Ollama only uses CPU and battery while it is
+                actively generating a response — when idle it uses almost nothing. When you are done,
+                you can close Termux entirely to free up the ~100 MB of memory it holds while waiting.
+              </p>
+            </div>
+
+            {/* Option B: Auto-start */}
+            <div className="rounded-xl bg-white/5 px-4 py-3 space-y-3">
+              <p className="text-xs font-semibold text-slate-300">
+                Option B — Auto-start on boot (more convenient, small background cost)
+              </p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Ollama will start automatically every time the phone turns on. The only background
+                cost is about 50–100 MB of memory while it waits — CPU and battery are not affected
+                until you actually send a message. To set this up:
+              </p>
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[11px] font-bold text-slate-300">1</span>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    In F-Droid, search for <strong className="text-white">Termux:Boot</strong> and install it.
+                    Open it once — this registers it with Android so it can run on startup.
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[11px] font-bold text-slate-300">2</span>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    In Termux, create the boot script folder and the script itself:
+                    <code className="block mt-1.5 rounded-lg bg-black/40 px-3 py-2 font-mono text-[11px] text-emerald-300 select-all leading-relaxed">
+                      {`mkdir -p ~/.termux/boot\necho 'ollama serve &' > ~/.termux/boot/start-ollama.sh\nchmod +x ~/.termux/boot/start-ollama.sh`}
+                    </code>
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[11px] font-bold text-slate-300">3</span>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Restart your phone. From now on, Ollama starts in the background automatically
+                    and this app's <strong className="text-white">Ollama tab</strong> will work
+                    straight away without opening Termux first.
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[11px] font-bold text-slate-300">4</span>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    If you ever want to stop the auto-start, delete the script:
+                    <code className="block mt-1.5 rounded-lg bg-black/40 px-3 py-2 font-mono text-[11px] text-emerald-300 select-all">
+                      rm ~/.termux/boot/start-ollama.sh
+                    </code>
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
         </div>

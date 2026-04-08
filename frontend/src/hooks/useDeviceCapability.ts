@@ -8,6 +8,10 @@ export interface DeviceCapability {
   estimatedVramGB: number;
   /** navigator.deviceMemory in GB (rounded, may be undefined) */
   deviceMemoryGB: number;
+  /** Conservative VRAM budget (65% of estimated — safe threshold for browser inference) */
+  vramBudgetGB: number;
+  /** Conservative RAM budget for Ollama models (deviceMemory / 2.5) */
+  ramBudgetGB: number;
   /** WebGPU supported */
   hasWebGPU: boolean;
   /** Best model ID that fits within device limits */
@@ -42,9 +46,13 @@ async function detectCapability(): Promise<DeviceCapability> {
     // WebGPU present but adapter unavailable (headless, etc.)
   }
 
-  // Pick the best model that fits within (vram * 0.85) to leave headroom,
-  // also gated by deviceMemory
-  const budget = Math.min(estimatedVramGB * 0.85, deviceMemoryGB / 2);
+  // Conservative budgets — leave significant headroom to avoid crashes:
+  // - 65% of VRAM for browser inference (browser itself + OS need the rest)
+  // - deviceMemory / 2.5 for Ollama (OS + browser + model overhead)
+  const vramBudgetGB = estimatedVramGB * 0.65;
+  const ramBudgetGB  = deviceMemoryGB / 2.5;
+  const budget = Math.min(vramBudgetGB, ramBudgetGB);
+
   const sorted = [...AVAILABLE_MODELS].sort((a, b) => b.vramGB - a.vramGB);
   const best = sorted.find((m) => m.vramGB <= budget && m.minRamGB <= deviceMemoryGB);
   const recommendedModel = best?.id ?? DEFAULT_MODEL;
@@ -52,6 +60,8 @@ async function detectCapability(): Promise<DeviceCapability> {
   return {
     estimatedVramGB,
     deviceMemoryGB,
+    vramBudgetGB,
+    ramBudgetGB,
     hasWebGPU: true,
     recommendedModel,
     ready: true,
@@ -62,6 +72,8 @@ export function useDeviceCapability(): DeviceCapability {
   const [cap, setCap] = useState<DeviceCapability>({
     estimatedVramGB: 0,
     deviceMemoryGB: 4,
+    vramBudgetGB: 0,
+    ramBudgetGB: 0,
     hasWebGPU: false,
     recommendedModel: DEFAULT_MODEL,
     ready: false,

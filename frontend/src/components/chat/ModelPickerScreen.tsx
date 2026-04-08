@@ -175,15 +175,20 @@ export function ModelPickerScreen({ chatId }: Props) {
             {tab === "transformers" && <>
               {isNoWebGPU
                 ? <NoWebGPU />
-                : TRANSFORMERS_MODELS.map((m) => (
-                    <ModelRow
-                      key={m.id}
-                      m={m}
-                      selected={selectedModel === m.id}
-                      disabled={loading}
-                      onSelect={() => setModelForChat(chatId, m.id)}
-                    />
-                  ))
+                : TRANSFORMERS_MODELS.map((m) => {
+                    const heavy = cap.ready && m.vramGB > cap.vramBudgetGB;
+                    return (
+                      <ModelRow
+                        key={m.id}
+                        m={m}
+                        selected={selectedModel === m.id}
+                        disabled={loading}
+                        tooHeavy={heavy}
+                        onSelect={() => setModelForChat(chatId, m.id)}
+                        badge={heavy ? <Pill red>too heavy</Pill> : undefined}
+                      />
+                    );
+                  })
               }
             </>}
 
@@ -193,18 +198,19 @@ export function ModelPickerScreen({ chatId }: Props) {
                 ? <NoWebGPU />
                 : pageModels.map((m: ModelDef) => {
                     const recommended = cap.ready && m.id === cap.recommendedModel;
-                    const overBudget  = cap.ready && m.vramGB > cap.estimatedVramGB * 0.85;
+                    const heavy       = cap.ready && m.vramGB > cap.vramBudgetGB;
                     return (
                       <ModelRow
                         key={m.id}
                         m={m}
                         selected={selectedModel === m.id}
                         disabled={loading}
+                        tooHeavy={heavy}
                         onSelect={() => setModelForChat(chatId, m.id)}
                         badge={
-                          cachedModels.has(m.id)  ? <Pill green>cached</Pill>
-                          : recommended           ? <Pill accent>best</Pill>
-                          : overBudget            ? <span className="text-[10px] text-amber-400">⚠ slow</span>
+                          heavy                   ? <Pill red>too heavy</Pill>
+                          : cachedModels.has(m.id) ? <Pill green>cached</Pill>
+                          : recommended            ? <Pill accent>best</Pill>
                           : null
                         }
                       />
@@ -270,30 +276,35 @@ export function ModelPickerScreen({ chatId }: Props) {
                 </div>
               ) : (
                 ollamaList.map((m) => {
-                  const modelId = `ollama:${m.name}`;
-                  const sizeGB = (m.size / 1024 ** 3).toFixed(1);
+                  const modelId  = `ollama:${m.name}`;
+                  const sizeGB   = m.size / 1024 ** 3;
+                  // Runtime RAM ≈ model file size × 1.3 (quantized models load fully into RAM)
+                  const needsGB  = sizeGB * 1.3;
+                  const heavy    = cap.ready && needsGB > cap.ramBudgetGB;
+                  const isSelected = selectedModel === modelId;
                   return (
                     <button
                       key={m.name}
-                      onClick={() => setModelForChat(chatId, modelId)}
-                      disabled={loading}
+                      onClick={heavy ? undefined : () => setModelForChat(chatId, modelId)}
+                      disabled={loading || heavy}
+                      title={heavy ? "This model requires more RAM than your device can safely spare" : undefined}
                       className={clsx(
                         "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
-                        selectedModel === modelId ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
-                        loading && "cursor-not-allowed opacity-60"
+                        isSelected ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
+                        (loading || heavy) && "cursor-not-allowed opacity-50"
                       )}
                     >
                       <span className={clsx(
                         "h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
-                        selectedModel === modelId ? "border-accent" : "border-slate-600"
+                        isSelected ? "border-accent" : "border-slate-600"
                       )}>
-                        {selectedModel === modelId && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                        {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
                       </span>
                       <span className="flex-1 flex items-center gap-2 min-w-0">
                         <span className="text-sm text-slate-200 font-medium truncate">{m.name}</span>
-                        <Pill green>local</Pill>
+                        {heavy ? <Pill red>too heavy</Pill> : <Pill green>local</Pill>}
                       </span>
-                      <span className="text-xs text-slate-500 shrink-0">~{sizeGB} GB</span>
+                      <span className="text-xs text-slate-500 shrink-0">~{sizeGB.toFixed(1)} GB</span>
                     </button>
                   );
                 })
@@ -435,7 +446,11 @@ export function ModelPickerScreen({ chatId }: Props) {
         ) : (
           <button
             onClick={handleLoad}
-            disabled={!selectedDef && !isOllamaSelected}
+            disabled={
+              (!selectedDef && !isOllamaSelected) ||
+              (!!selectedDef && selectedDef.backend !== "cloud" && selectedDef.backend !== "chrome-ai" && cap.ready && selectedDef.vramGB > cap.vramBudgetGB) ||
+              (isOllamaSelected && cap.ready && (() => { const m = ollamaList.find(o => `ollama:${o.name}` === selectedModel); return !!m && (m.size / 1024**3) * 1.3 > cap.ramBudgetGB; })())
+            }
             className="w-full rounded-xl bg-accent py-2.5 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {loadLabel()}
@@ -451,7 +466,9 @@ export function ModelPickerScreen({ chatId }: Props) {
 
         {cap.ready && (
           <p className="text-center text-[11px] text-slate-600">
-            ~{cap.estimatedVramGB.toFixed(1)} GB VRAM · {cap.deviceMemoryGB} GB RAM
+            {cap.hasWebGPU
+              ? `~${cap.vramBudgetGB.toFixed(1)} GB VRAM available · ${cap.deviceMemoryGB} GB RAM`
+              : `${cap.deviceMemoryGB} GB RAM · no WebGPU`}
           </p>
         )}
 
@@ -462,18 +479,19 @@ export function ModelPickerScreen({ chatId }: Props) {
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
-function ModelRow({ m, selected, disabled, onSelect, badge }: {
-  m: ModelDef; selected: boolean; disabled: boolean;
+function ModelRow({ m, selected, disabled, tooHeavy, onSelect, badge }: {
+  m: ModelDef; selected: boolean; disabled: boolean; tooHeavy?: boolean;
   onSelect: () => void; badge?: React.ReactNode;
 }) {
   return (
     <button
-      onClick={onSelect}
-      disabled={disabled}
+      onClick={tooHeavy ? undefined : onSelect}
+      disabled={disabled || tooHeavy}
+      title={tooHeavy ? "This model requires more memory than your device has available" : undefined}
       className={clsx(
         "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
         selected ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
-        disabled && "cursor-not-allowed opacity-60"
+        (disabled || tooHeavy) && "cursor-not-allowed opacity-50"
       )}
     >
       {/* Radio */}
@@ -499,9 +517,9 @@ function ModelRow({ m, selected, disabled, onSelect, badge }: {
   );
 }
 
-function Pill({ children, green, blue, yellow, accent }: {
+function Pill({ children, green, blue, yellow, accent, red }: {
   children: React.ReactNode;
-  green?: boolean; blue?: boolean; yellow?: boolean; accent?: boolean;
+  green?: boolean; blue?: boolean; yellow?: boolean; accent?: boolean; red?: boolean;
 }) {
   return (
     <span className={clsx(
@@ -510,6 +528,7 @@ function Pill({ children, green, blue, yellow, accent }: {
       blue   && "bg-blue-500/15 text-blue-400",
       yellow && "bg-yellow-500/15 text-yellow-400",
       accent && "bg-accent/20 text-accent",
+      red    && "bg-red-500/15 text-red-400",
     )}>
       {children}
     </span>
