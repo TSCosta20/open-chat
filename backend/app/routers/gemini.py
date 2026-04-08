@@ -27,9 +27,10 @@ ALLOWED_MODELS = {
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
     # OpenRouter free tier — user supplies OPENROUTER_API_KEY
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
     "google/gemma-3-27b-it:free",
     "google/gemma-3-12b-it:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
     "deepseek/deepseek-r1-0528:free",
 }
 
@@ -55,7 +56,16 @@ async def _stream_gemini(model: str, history: list, new_content: str, api_key: s
         async with client.stream("POST", url, json={"contents": contents}) as resp:
             if resp.status_code != 200:
                 body = await resp.aread()
-                yield None, f"Gemini error {resp.status_code}: {body.decode()[:200]}"
+                if resp.status_code == 429:
+                    yield None, "Gemini rate limit reached. Wait a moment and try again, or use a different model."
+                elif resp.status_code in (401, 403):
+                    yield None, "Invalid Gemini API key. Please check your key in the model picker."
+                else:
+                    try:
+                        detail = json.loads(body).get("error", {}).get("message", body.decode()[:120])
+                    except Exception:
+                        detail = body.decode()[:120]
+                    yield None, f"Gemini error: {detail}"
                 return
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
@@ -93,7 +103,16 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
         async with client.stream("POST", _OPENROUTER_URL, json=body, headers=headers) as resp:
             if resp.status_code != 200:
                 err_body = await resp.aread()
-                yield None, f"OpenRouter error {resp.status_code}: {err_body.decode()[:200]}"
+                if resp.status_code == 429:
+                    yield None, "This model is currently busy (rate-limited). Try a different model or wait a moment."
+                elif resp.status_code == 401:
+                    yield None, "Invalid OpenRouter API key. Please check your key in the model picker."
+                else:
+                    try:
+                        detail = json.loads(err_body).get("error", {}).get("message", err_body.decode()[:120])
+                    except Exception:
+                        detail = err_body.decode()[:120]
+                    yield None, f"OpenRouter error: {detail}"
                 return
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):

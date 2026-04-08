@@ -32,18 +32,26 @@ export const CHROME_AI_MODEL: ModelDef = {
 export const CLOUD_MODELS: ModelDef[] = [
   // OpenRouter free tier — needs OPENROUTER_API_KEY on server
   {
-    id: "cloud:google/gemma-3-27b-it:free",
-    name: "Gemma 3 27B",
+    id: "cloud:meta-llama/llama-3.3-70b-instruct:free",
+    name: "Llama 3.3 70B",
     vramGB: 0, minRamGB: 0,
     backend: "cloud",
-    cloudModelId: "google/gemma-3-27b-it:free",
+    cloudModelId: "meta-llama/llama-3.3-70b-instruct:free",
   },
   {
     id: "cloud:meta-llama/llama-3.1-8b-instruct:free",
     name: "Llama 3.1 8B",
     vramGB: 0, minRamGB: 0,
+    fast: true,
     backend: "cloud",
     cloudModelId: "meta-llama/llama-3.1-8b-instruct:free",
+  },
+  {
+    id: "cloud:google/gemma-3-27b-it:free",
+    name: "Gemma 3 27B",
+    vramGB: 0, minRamGB: 0,
+    backend: "cloud",
+    cloudModelId: "google/gemma-3-27b-it:free",
   },
   {
     id: "cloud:deepseek/deepseek-r1-0528:free",
