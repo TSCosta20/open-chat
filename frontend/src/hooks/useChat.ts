@@ -100,11 +100,14 @@ export function useChat(chatId: string) {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
+        const isSuggestLocal = msg.includes("suggest_local");
         store.appendMessage(chatId, {
           id: crypto.randomUUID(),
           chatId,
           role: "assistant",
-          content: `Sorry, ${msg}. Please try again.`,
+          content: isSuggestLocal
+            ? "__SUGGEST_LOCAL__"
+            : `Sorry, ${msg}. Please try again.`,
           createdAt: new Date().toISOString(),
         });
       } finally {
@@ -171,7 +174,10 @@ async function streamCloud(
       if (data === "[DONE]") return full;
       try {
         const parsed = JSON.parse(data);
-        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.error) {
+          if (parsed.suggest_local) throw new Error("suggest_local");
+          throw new Error(parsed.error);
+        }
         if (parsed.type === "status") {
           onStatus(parsed.text ?? "");
         } else if (parsed.type === "token" || parsed.token) {

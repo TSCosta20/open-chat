@@ -254,7 +254,7 @@ async def cloud_chat(
                     return
 
             if not succeeded:
-                yield f"data: {json.dumps({'error': 'All models are currently unavailable. Please try again in a moment.'})}\n\n"
+                yield f"data: {json.dumps({'error': 'All models are currently unavailable. Please try again in a moment.', 'suggest_local': True})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
