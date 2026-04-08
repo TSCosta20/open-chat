@@ -10,13 +10,18 @@ import { renameChat } from "@/lib/api";
 import { speak } from "@/hooks/useVoiceInput";
 import { ALL_MODELS } from "@/types";
 import type { Message } from "@/types";
-
 import { getStoredApiKeys } from "@/hooks/useApiKeys";
+
+// If no token arrives within this time, the device can't handle the model
+const FIRST_TOKEN_TIMEOUT_MS = 30_000;
+// If token rate drops below this after 10 tokens, device is struggling
+const MIN_TOKEN_RATE = 0.4; // tokens/sec
+const RATE_CHECK_AFTER = 10; // tokens
 
 export function useChat(chatId: string) {
   const store = useChatStore();
-  const { generate: generateWebLLM } = useWebLLM();
-  const { generate: generateTransformers } = useTransformersJS();
+  const { generate: generateWebLLM, abort: abortWebLLM } = useWebLLM();
+  const { generate: generateTransformers, abort: abortTransformers } = useTransformersJS();
   const { generate: generateChromeAI } = useChromeAI();
   const { data: session } = useSession();
 
@@ -26,7 +31,7 @@ export function useChat(chatId: string) {
       const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
 
       const existingHistory = (useChatStore.getState().messages[chatId] ?? [])
-        .filter((m) => m.content !== "__SUGGEST_LOCAL__");
+        .filter((m) => m.content !== "__SUGGEST_LOCAL__" && m.content !== "__TOO_HEAVY__");
       const llmMessages = [
         ...existingHistory.map((m) => ({
           role: m.role as "user" | "assistant",
@@ -67,11 +72,46 @@ export function useChat(chatId: string) {
             geminiKey,
           );
           cloudHandledPersist = true;
-        } else if (modelDef?.backend === "transformers") {
-          finalContent = await generateTransformers(llmMessages, onToken);
         } else {
-          // WebLLM (default)
-          finalContent = await generateWebLLM(llmMessages, onToken);
+          // Local inference (WebLLM or Transformers.js) — watchdog for overloaded device
+          const abort = modelDef?.backend === "transformers" ? abortTransformers : abortWebLLM;
+          const generate = modelDef?.backend === "transformers" ? generateTransformers : generateWebLLM;
+
+          let tokenCount = 0;
+          let firstTokenAt: number | null = null;
+          let tooHeavy = false;
+
+          // Watchdog: kill if no first token within 30s
+          const watchdog = setTimeout(() => {
+            tooHeavy = true;
+            abort();
+          }, FIRST_TOKEN_TIMEOUT_MS);
+
+          finalContent = await generate(llmMessages, (tok) => {
+            const now = Date.now();
+            if (firstTokenAt === null) {
+              firstTokenAt = now;
+              clearTimeout(watchdog); // first token arrived in time
+            }
+            tokenCount++;
+            // After N tokens, check if rate is too slow
+            if (tokenCount === RATE_CHECK_AFTER && firstTokenAt !== null) {
+              const elapsed = (now - firstTokenAt) / 1000;
+              const rate = tokenCount / elapsed;
+              if (rate < MIN_TOKEN_RATE) {
+                tooHeavy = true;
+                abort();
+                return;
+              }
+            }
+            if (!tooHeavy) onToken(tok);
+          });
+
+          clearTimeout(watchdog);
+
+          if (tooHeavy) {
+            throw new Error("__TOO_HEAVY__");
+          }
         }
 
         if (finalContent) {
@@ -102,11 +142,14 @@ export function useChat(chatId: string) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
         const isSuggestLocal = msg.includes("suggest_local");
+        const isTooHeavy = msg === "__TOO_HEAVY__";
         store.appendMessage(chatId, {
           id: crypto.randomUUID(),
           chatId,
           role: "assistant",
-          content: isSuggestLocal
+          content: isTooHeavy
+            ? "__TOO_HEAVY__"
+            : isSuggestLocal
             ? "__SUGGEST_LOCAL__"
             : `Sorry, ${msg}. Please try again.`,
           createdAt: new Date().toISOString(),
