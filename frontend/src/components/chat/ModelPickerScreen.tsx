@@ -8,6 +8,7 @@ import { useTransformersJS } from "@/hooks/useTransformersJS";
 import { useDeviceCapability } from "@/hooks/useDeviceCapability";
 import { useCachedModels } from "@/hooks/useCachedModels";
 import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
+import { useApiKeys } from "@/hooks/useApiKeys";
 import {
   AVAILABLE_MODELS,
   CLOUD_MODELS,
@@ -37,6 +38,11 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [page, setPage]                 = useState(0);
   const [tab, setTab]                   = useState<Tab>("cloud");
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
+  const { openRouterKey, geminiKey, saveOpenRouterKey, saveGeminiKey } = useApiKeys();
+  const [orDraft, setOrDraft]           = useState("");
+  const [geminiDraft, setGeminiDraft]   = useState("");
+  const [orSaved, setOrSaved]           = useState(false);
+  const [geminiSaved, setGeminiSaved]   = useState(false);
 
   useEffect(() => { checkChromeAI().then(setChromeStatus); }, []);
 
@@ -123,20 +129,26 @@ export function ModelPickerScreen({ chatId }: Props) {
                   badge={<Pill green>native · free</Pill>}
                 />
               )}
-              {CLOUD_MODELS.map((m) => (
-                <ModelRow
-                  key={m.id}
-                  m={m}
-                  selected={selectedModel === m.id}
-                  disabled={loading}
-                  onSelect={() => setModelForChat(chatId, m.id)}
-                  badge={
-                    m.cloudModelId?.startsWith("gemini-")
-                      ? <Pill blue>own key</Pill>
-                      : <Pill green>free</Pill>
-                  }
-                />
-              ))}
+              {CLOUD_MODELS.map((m) => {
+                const isGemini = m.cloudModelId?.startsWith("gemini-");
+                const hasKey = isGemini ? !!geminiKey : !!openRouterKey;
+                return (
+                  <ModelRow
+                    key={m.id}
+                    m={m}
+                    selected={selectedModel === m.id}
+                    disabled={loading}
+                    onSelect={() => setModelForChat(chatId, m.id)}
+                    badge={
+                      hasKey
+                        ? <Pill green>key saved</Pill>
+                        : isGemini
+                        ? <Pill blue>own key</Pill>
+                        : <Pill yellow>key needed</Pill>
+                    }
+                  />
+                );
+              })}
             </>}
 
             {/* ── Transformers.js ────────────────────────────────── */}
@@ -183,6 +195,89 @@ export function ModelPickerScreen({ chatId }: Props) {
 
           </div>
         </div>
+
+        {/* ── API Key setup — shown on Cloud tab ────────────────────── */}
+        {tab === "cloud" && (
+          <div className="rounded-xl border border-surface-border bg-surface-secondary divide-y divide-surface-border overflow-hidden">
+
+            {/* OpenRouter */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">OpenRouter key</p>
+                {openRouterKey
+                  ? <Pill green>saved</Pill>
+                  : <Pill yellow>required for free models</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Free — no credit card needed.{" "}
+                <a
+                  href="https://openrouter.ai/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:text-accent-hover"
+                >
+                  openrouter.ai/keys
+                </a>{" "}
+                → Sign in → Create key → copy it below.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={openRouterKey ? "sk-or-••••••••" : "sk-or-..."}
+                  value={orDraft}
+                  onChange={(e) => { setOrDraft(e.target.value); setOrSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => { saveOpenRouterKey(orDraft); setOrDraft(""); setOrSaved(true); }}
+                  disabled={!orDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {orSaved ? "Saved ✓" : "Save"}
+                </button>
+              </div>
+            </div>
+
+            {/* Gemini */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Gemini key</p>
+                {geminiKey
+                  ? <Pill green>saved</Pill>
+                  : <Pill blue>optional</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                1,500 free requests/day.{" "}
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:text-accent-hover"
+                >
+                  aistudio.google.com/app/apikey
+                </a>{" "}
+                → Get API key → copy it below.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={geminiKey ? "AIza••••••••" : "AIza..."}
+                  value={geminiDraft}
+                  onChange={(e) => { setGeminiDraft(e.target.value); setGeminiSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => { saveGeminiKey(geminiDraft); setGeminiDraft(""); setGeminiSaved(true); }}
+                  disabled={!geminiDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {geminiSaved ? "Saved ✓" : "Save"}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
 
         {/* WebLLM pagination — only shown on webllm tab */}
         {tab === "webllm" && !isNoWebGPU && totalPages > 1 && (

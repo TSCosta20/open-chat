@@ -112,9 +112,14 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
+class CloudChatRequestWithKeys(CloudChatRequest):
+    openrouter_key: str = ""
+    gemini_key: str = ""
+
+
 @router.post("/chat/cloud")
 async def cloud_chat(
-    body: CloudChatRequest,
+    body: CloudChatRequestWithKeys,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_user_id),
 ):
@@ -124,13 +129,20 @@ async def cloud_chat(
     is_gemini = body.model.startswith("gemini-")
 
     if is_gemini:
-        api_key = os.environ.get("GEMINI_API_KEY", "")
+        # User-provided key takes priority over server env var
+        api_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
-            raise HTTPException(status_code=503, detail="GEMINI_API_KEY not configured on server")
+            raise HTTPException(
+                status_code=503,
+                detail="Gemini API key required. Add your key in the model picker."
+            )
     else:
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = body.openrouter_key or os.environ.get("OPENROUTER_API_KEY", "")
         if not api_key:
-            raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured on server")
+            raise HTTPException(
+                status_code=503,
+                detail="OpenRouter API key required. Add your key in the model picker."
+            )
 
     chat = (
         db.query(models.Chat)

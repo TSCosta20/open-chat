@@ -10,6 +10,7 @@ import { renameChat } from "@/lib/api";
 import { speak } from "@/hooks/useVoiceInput";
 import { ALL_MODELS } from "@/types";
 import type { Message } from "@/types";
+import { getStoredApiKeys } from "@/hooks/useApiKeys";
 
 export function useChat(chatId: string) {
   const store = useChatStore();
@@ -52,12 +53,15 @@ export function useChat(chatId: string) {
         if (modelDef?.backend === "chrome-ai") {
           finalContent = await generateChromeAI(llmMessages, onToken);
         } else if (modelDef?.backend === "cloud") {
+          const { openRouterKey, geminiKey } = getStoredApiKeys();
           finalContent = await streamCloud(
             chatId,
             content,
             modelDef.cloudModelId!,
             token,
-            onToken
+            onToken,
+            openRouterKey,
+            geminiKey,
           );
           cloudHandledPersist = true;
         } else if (modelDef?.backend === "transformers") {
@@ -119,7 +123,9 @@ async function streamCloud(
   content: string,
   cloudModelId: string,
   authToken: string | undefined,
-  onToken: (t: string) => void
+  onToken: (t: string) => void,
+  openRouterKey = "",
+  geminiKey = "",
 ): Promise<string> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   const res = await fetch(`${API_URL}/chat/cloud`, {
@@ -128,7 +134,13 @@ async function streamCloud(
       "Content-Type": "application/json",
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     },
-    body: JSON.stringify({ chat_id: chatId, content, model: cloudModelId }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      content,
+      model: cloudModelId,
+      openrouter_key: openRouterKey,
+      gemini_key: geminiKey,
+    }),
   });
 
   if (!res.ok) {
