@@ -206,17 +206,17 @@ async def cloud_chat(
                 yield "data: [DONE]\n\n"
                 return
 
-            # Build chain: if a specific model was requested, try it first then fall through
+            # Auto mode: try full chain. Specific model: try only that one.
             if use_auto:
                 chain = OPENROUTER_FALLBACK_CHAIN
             else:
                 requested_label = next((label for mid, label in OPENROUTER_FALLBACK_CHAIN if mid == body.model), body.model)
-                rest = [(mid, label) for mid, label in OPENROUTER_FALLBACK_CHAIN if mid != body.model]
-                chain = [(body.model, requested_label)] + rest
+                chain = [(body.model, requested_label)]
 
             succeeded = False
             for model_id, model_label in chain:
-                yield _status(f"Trying {model_label}…")
+                if use_auto:
+                    yield _status(f"Trying {model_label}…")
                 got_token = False
                 failed = False
 
@@ -238,7 +238,12 @@ async def cloud_chat(
                     succeeded = True
                     break
 
-                yield _status(f"{model_label} unavailable — trying next…")
+                if use_auto:
+                    yield _status(f"{model_label} unavailable — trying next…")
+                else:
+                    yield f"data: {json.dumps({'error': f'{model_label} is currently unavailable. Try \"Best available\" or pick a different model.'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
 
             if not succeeded:
                 yield f"data: {json.dumps({'error': 'All models are currently unavailable. Please try again in a moment.'})}\n\n"
