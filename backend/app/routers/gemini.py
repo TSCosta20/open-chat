@@ -165,7 +165,15 @@ async def cloud_chat(
         .first()
     )
     if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
+        # Chat may have been created optimistically on the client — create it now
+        chat = models.Chat(
+            id=body.chat_id,
+            user_id=user_id,
+            title="New Chat",
+            model=body.model,
+        )
+        db.add(chat)
+        db.commit()
 
     history = (
         db.query(models.Message)

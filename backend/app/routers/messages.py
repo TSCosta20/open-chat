@@ -44,7 +44,15 @@ def persist_messages(
         .first()
     )
     if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
+        # Optimistic client chat — create it now
+        chat = models.Chat(
+            id=chat_id,
+            user_id=user_id,
+            title="New Chat",
+            model="unknown",
+        )
+        db.add(chat)
+        db.commit()
 
     for role, content in [("user", body.user), ("assistant", body.assistant)]:
         msg = models.Message(
