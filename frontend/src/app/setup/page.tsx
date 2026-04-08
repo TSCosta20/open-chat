@@ -18,7 +18,7 @@ function osToPlatform(os: OS): Platform {
   if (os === "ios")     return "ios";
   if (os === "android") return "android";
   if (os === "mac")     return "mac";
-  return "windows"; // default for windows, linux, unknown
+  return "windows";
 }
 
 // ── Shared primitives ────────────────────────────────────────────────────────
@@ -76,71 +76,218 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
   );
 }
 
-// ── Platform content ─────────────────────────────────────────────────────────
+// ── Shared cloud cards (used on iOS, Android, Windows, Mac) ──────────────────
 
-function MobileGuide() {
+function CloudCards({ tap = false }: { tap?: boolean }) {
+  const click = tap ? "Tap" : "Click";
+  return <>
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <SectionTitle>Option 1 — Free cloud models (recommended)</SectionTitle>
+        <div className="flex gap-1.5">
+          <Tag color="green">Free</Tag>
+          <Tag color="blue">No card needed</Tag>
+        </div>
+      </div>
+      <div className="space-y-3">
+        <Step n={1}>
+          Open <ExternalLink href="https://openrouter.ai/keys">openrouter.ai/keys</ExternalLink> and
+          create a free account — just an email address, no credit card needed.
+        </Step>
+        <Step n={2}>
+          {click} <strong className="text-white">Create key</strong>, give it any name, and copy the key.
+          It starts with <code className="bg-black/30 px-1 rounded text-slate-300">sk-or-</code>.
+        </Step>
+        <Step n={3}>
+          Come back to this app, open the model picker (the button showing the current model name at the
+          bottom of the screen), go to the <strong className="text-white">Cloud</strong> tab, paste the
+          key under <strong className="text-white">OpenRouter key</strong> and {click.toLowerCase()}{" "}
+          <strong className="text-white">Save</strong>.
+        </Step>
+        <Step n={4}>
+          Select <strong className="text-white">Best available</strong> and {click.toLowerCase()}{" "}
+          <strong className="text-white">Use</strong>. Done — start chatting.
+        </Step>
+      </div>
+    </Card>
+
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <SectionTitle>Option 2 — Gemini (Google account)</SectionTitle>
+        <Tag color="green">1,500 free requests/day</Tag>
+      </div>
+      <div className="space-y-3">
+        <Step n={1}>
+          Open <ExternalLink href="https://aistudio.google.com/app/apikey">aistudio.google.com/app/apikey</ExternalLink> and
+          sign in with your Google account.
+        </Step>
+        <Step n={2}>
+          {click} <strong className="text-white">Get API key</strong> →{" "}
+          <strong className="text-white">Create API key</strong> and copy it.
+        </Step>
+        <Step n={3}>
+          In the app, open the model picker → <strong className="text-white">Cloud</strong> tab →
+          paste under <strong className="text-white">Gemini key</strong> → {click.toLowerCase()}{" "}
+          <strong className="text-white">Save</strong>.
+        </Step>
+        <Step n={4}>
+          Select <strong className="text-white">Gemini 2.0 Flash</strong> and {click.toLowerCase()}{" "}
+          <strong className="text-white">Use</strong>.
+        </Step>
+      </div>
+    </Card>
+  </>;
+}
+
+// ── Platform guides ───────────────────────────────────────────────────────────
+
+function IOSGuide() {
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-400 leading-relaxed">
-        On mobile, AI runs in the cloud — your phone sends your message to a server which replies instantly.
-        It is free and no special apps are needed.
-      </p>
+      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-sm text-blue-300 leading-relaxed">
+        On iPhone and iPad, AI runs in the cloud — your message is sent to a server and a reply comes
+        back instantly. This is free. Running AI locally is not possible on iOS due to system
+        restrictions — cloud is the only option.
+      </div>
+      <CloudCards tap />
+    </div>
+  );
+}
 
-      {/* Option 1: OpenRouter */}
+function AndroidGuide() {
+  return (
+    <div className="space-y-4">
+      <CloudCards tap />
+
+      {/* Termux + Ollama */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 1 — Free cloud models (recommended)</SectionTitle>
+          <SectionTitle>Option 3 — Run AI locally on your phone (Termux + Ollama)</SectionTitle>
           <div className="flex gap-1.5">
+            <Tag color="purple">Fully private</Tag>
             <Tag color="green">Free</Tag>
-            <Tag color="blue">No card</Tag>
           </div>
         </div>
-        <div className="space-y-3">
-          <Step n={1}>
-            Open <ExternalLink href="https://openrouter.ai/keys">openrouter.ai/keys</ExternalLink> in
-            your browser and create a free account (email only, no credit card needed).
-          </Step>
-          <Step n={2}>
-            Tap <strong className="text-white">Create key</strong>, give it any name, and copy the key
-            that starts with <code className="bg-black/30 px-1 rounded text-slate-300">sk-or-</code>.
-          </Step>
-          <Step n={3}>
-            Come back to this app, tap the model picker, go to the{" "}
-            <strong className="text-white">Cloud</strong> tab, paste the key under{" "}
-            <strong className="text-white">OpenRouter key</strong> and tap <strong className="text-white">Save</strong>.
-          </Step>
-          <Step n={4}>
-            Select <strong className="text-white">Best available</strong> and tap{" "}
-            <strong className="text-white">Use</strong>. Done — start chatting.
-          </Step>
-        </div>
-      </Card>
 
-      {/* Option 2: Gemini */}
-      <Card>
-        <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 2 — Gemini (Google account)</SectionTitle>
-          <div className="flex gap-1.5">
-            <Tag color="green">1,500 req/day free</Tag>
-          </div>
+        <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-300 leading-relaxed space-y-1.5">
+          <p>
+            <strong className="text-amber-200">Requirements:</strong>{" "}
+            Android 7 or newer · at least 6 GB of RAM · 4 GB or more free storage
+          </p>
+          <p>
+            <strong className="text-amber-200">Speed:</strong>{" "}
+            Runs on CPU only (phones have no driver support for GPU inference).
+            Use small models — anything under 3 billion parameters. Larger models will be very slow.
+          </p>
+          <p>
+            <strong className="text-amber-200">What is Termux?</strong>{" "}
+            A free app that gives your Android phone a Linux terminal, allowing it to run software
+            normally only available on computers.
+          </p>
         </div>
-        <div className="space-y-3">
-          <Step n={1}>
-            Open <ExternalLink href="https://aistudio.google.com/app/apikey">aistudio.google.com/app/apikey</ExternalLink> and
-            sign in with your Google account.
-          </Step>
-          <Step n={2}>
-            Tap <strong className="text-white">Get API key</strong> →{" "}
-            <strong className="text-white">Create API key</strong> and copy it.
-          </Step>
-          <Step n={3}>
-            In the app, go to the <strong className="text-white">Cloud</strong> tab, paste under{" "}
-            <strong className="text-white">Gemini key</strong> → Save.
-          </Step>
-          <Step n={4}>
-            Select <strong className="text-white">Gemini 2.0 Flash</strong> and tap{" "}
-            <strong className="text-white">Use</strong>.
-          </Step>
+
+        <div className="space-y-6">
+
+          {/* Part 1 */}
+          <div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+              Part 1 — Install Termux
+            </p>
+            <div className="space-y-3">
+              <Step n={1}>
+                Install F-Droid first — it is a free app store for open-source apps.
+                Open <ExternalLink href="https://f-droid.org">f-droid.org</ExternalLink> in
+                Chrome on your phone, download the APK file, and install it.
+                If Android asks about installing from unknown sources, tap{" "}
+                <strong className="text-white">Allow</strong> — this is safe for F-Droid.
+              </Step>
+              <Step n={2}>
+                Open F-Droid, search for <strong className="text-white">Termux</strong>, and
+                install it. Do <strong className="text-white">not</strong> use the Play Store version
+                of Termux — it is outdated and will not work correctly.
+              </Step>
+              <Step n={3}>
+                Open Termux. You will see a black screen with a blinking cursor — that is normal.
+                Update its packages by typing this exactly and pressing Enter:
+                <Cmd>pkg update && pkg upgrade -y</Cmd>
+                If it asks any questions, type <code className="bg-black/30 px-1 rounded text-slate-300">y</code> and
+                press Enter. This takes a few minutes.
+              </Step>
+            </div>
+          </div>
+
+          {/* Part 2 */}
+          <div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+              Part 2 — Install Ollama
+            </p>
+            <div className="space-y-3">
+              <Step n={4}>
+                Run the official Ollama installer — this one command does everything:
+                <Cmd>curl -fsSL https://ollama.com/install.sh | sh</Cmd>
+                It will download and set up Ollama automatically. This takes a few minutes depending
+                on your internet speed.
+              </Step>
+              <Step n={5}>
+                Make Ollama always allow browser connections by running this once:
+                <Cmd>{`echo 'export OLLAMA_ORIGINS="*"' >> ~/.bashrc && source ~/.bashrc`}</Cmd>
+                You will not need to do this again after this step.
+              </Step>
+              <Step n={6}>
+                Start the Ollama server:
+                <Cmd>ollama serve</Cmd>
+                Leave this running. Do not close Termux — just press the{" "}
+                <strong className="text-white">Home button</strong> to go back to your other apps
+                while keeping Termux open in the background.
+              </Step>
+            </div>
+          </div>
+
+          {/* Part 3 */}
+          <div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+              Part 3 — Download a model
+            </p>
+            <div className="space-y-3">
+              <Step n={7}>
+                Open a second Termux session: swipe from the left edge of the Termux screen →
+                tap <strong className="text-white">New session</strong>. Then download a model
+                suited for phones:
+                <Cmd>ollama pull qwen2.5:0.5b</Cmd>
+                This is only about 400 MB and is the fastest option. Other choices:
+                <div className="mt-2 space-y-1 text-xs text-slate-400">
+                  <div className="flex items-baseline gap-2">
+                    <code className="bg-black/30 px-1 rounded text-slate-300 shrink-0">smollm2:360m</code>
+                    <span>— smallest (250 MB), fastest, less capable</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <code className="bg-black/30 px-1 rounded text-slate-300 shrink-0">llama3.2:1b</code>
+                    <span>— smarter but slower (1.3 GB)</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <code className="bg-black/30 px-1 rounded text-slate-300 shrink-0">llama3.2:3b</code>
+                    <span>— best quality that still works on phones (2 GB, needs 6+ GB RAM)</span>
+                  </div>
+                </div>
+              </Step>
+              <Step n={8}>
+                Press the Home button to go back to this web app (keep Termux open in the background).
+                Open the model picker → tap the <strong className="text-white">Ollama</strong> tab →
+                tap <strong className="text-white">Retry</strong>. Your model will appear in the list.
+                Tap it to select it, then tap <strong className="text-white">Use</strong>.
+              </Step>
+            </div>
+          </div>
+
+          {/* Everyday use tip */}
+          <div className="rounded-xl bg-white/5 px-4 py-3 space-y-2">
+            <p className="text-xs font-semibold text-slate-300">Every time you want to use local AI</p>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Open Termux and run <code className="bg-black/30 px-1 rounded text-slate-300">ollama serve</code>,
+              then minimise Termux and open this app. That is all you need to do after the setup above.
+            </p>
+          </div>
+
         </div>
       </Card>
     </div>
@@ -150,47 +297,19 @@ function MobileGuide() {
 function WindowsGuide() {
   return (
     <div className="space-y-4">
-      {/* Option 1: Cloud */}
-      <Card>
-        <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 1 — Free cloud models (easiest)</SectionTitle>
-          <div className="flex gap-1.5">
-            <Tag color="green">No install</Tag>
-            <Tag color="blue">Free</Tag>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <Step n={1}>
-            Go to <ExternalLink href="https://openrouter.ai/keys">openrouter.ai/keys</ExternalLink> and
-            create a free account (just an email, no credit card).
-          </Step>
-          <Step n={2}>
-            Click <strong className="text-white">Create key</strong>, give it any name, copy the key
-            (starts with <code className="bg-black/30 px-1 rounded text-slate-300">sk-or-</code>).
-          </Step>
-          <Step n={3}>
-            In this app, open the model picker → <strong className="text-white">Cloud tab</strong> →
-            paste the key under <strong className="text-white">OpenRouter key</strong> → Save.
-          </Step>
-          <Step n={4}>
-            Select <strong className="text-white">Best available</strong> → click{" "}
-            <strong className="text-white">Use</strong>. Done.
-          </Step>
-        </div>
-      </Card>
+      <CloudCards />
 
-      {/* Option 2: Ollama */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 2 — Ollama (private, runs on your PC)</SectionTitle>
+          <SectionTitle>Option 3 — Ollama (private, runs on your PC)</SectionTitle>
           <div className="flex gap-1.5">
             <Tag color="purple">Fully private</Tag>
             <Tag color="green">Free forever</Tag>
           </div>
         </div>
         <p className="mb-3 text-xs text-slate-500 leading-relaxed">
-          Your messages never leave your computer. Requires ~4 GB of free disk space per model and works best
-          with 8 GB RAM or more.
+          Your messages never leave your computer. Works best with 8 GB RAM or more and
+          requires ~4 GB free disk space per model.
         </p>
         <div className="space-y-3">
           <Step n={1}>
@@ -200,9 +319,9 @@ function WindowsGuide() {
           </Step>
           <Step n={2}>
             Open the <strong className="text-white">Start menu</strong>, search for{" "}
-            <strong className="text-white">Command Prompt</strong>, and run this command to download a model:
+            <strong className="text-white">Command Prompt</strong>, and download a model:
             <Cmd>ollama pull llama3.2</Cmd>
-            This downloads about 2 GB. You can browse more models at{" "}
+            About 2 GB. Browse more models at{" "}
             <ExternalLink href="https://ollama.com/library">ollama.com/library</ExternalLink>.
           </Step>
           <Step n={3}>
@@ -221,42 +340,38 @@ function WindowsGuide() {
             <strong className="text-white"> Quit</strong>, and reopen Ollama from the Start menu.
           </Step>
           <Step n={4}>
-            Back in this app, open the model picker → <strong className="text-white">Ollama tab</strong> →
-            click <strong className="text-white">Retry</strong>. Your model will appear. Select it and click{" "}
-            <strong className="text-white">Use</strong>.
+            In this app, open the model picker → <strong className="text-white">Ollama tab</strong> →
+            click <strong className="text-white">Retry</strong>. Your model will appear. Select it and
+            click <strong className="text-white">Use</strong>.
           </Step>
         </div>
       </Card>
 
-      {/* Option 3: Browser */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 3 — Runs directly in the browser</SectionTitle>
+          <SectionTitle>Option 4 — Runs directly in the browser</SectionTitle>
           <div className="flex gap-1.5">
             <Tag color="purple">Fully private</Tag>
             <Tag color="yellow">Needs Chrome / Edge</Tag>
           </div>
         </div>
         <p className="mb-3 text-xs text-slate-500 leading-relaxed">
-          No install needed — models download into your browser the first time (300 MB – 4 GB depending on the model).
+          No install needed — models download into your browser the first time (300 MB – 4 GB).
           Requires Chrome 113+ or Edge 113+.
         </p>
         <div className="space-y-3">
           <Step n={1}>
             Make sure you are using <ExternalLink href="https://www.google.com/chrome/">Google Chrome</ExternalLink> or{" "}
-            <ExternalLink href="https://www.microsoft.com/edge">Microsoft Edge</ExternalLink> (version 113 or newer —
-            check via the three-dot menu → Help → About).
+            <ExternalLink href="https://www.microsoft.com/edge">Microsoft Edge</ExternalLink> (version 113
+            or newer — check via the three-dot menu → Help → About).
           </Step>
           <Step n={2}>
-            In this app, open the model picker and go to the{" "}
-            <strong className="text-white">Transformers.js</strong> tab.
+            Open the model picker → <strong className="text-white">Transformers.js</strong> tab →
+            pick a model tagged <strong className="text-white">fast</strong> (SmolLM2 360M or Qwen 0.5B) →
+            click <strong className="text-white">Download &amp; use</strong>.
           </Step>
           <Step n={3}>
-            Pick a model tagged <strong className="text-white">fast</strong> (such as SmolLM2 360M or Qwen 0.5B)
-            for the quickest first download, then click <strong className="text-white">Download &amp; use</strong>.
-          </Step>
-          <Step n={4}>
-            Wait for the download bar to reach 100%. After that, the model is cached and loads instantly next time.
+            Wait for the download bar to reach 100%. The model is cached and loads instantly from then on.
           </Step>
         </div>
       </Card>
@@ -267,60 +382,32 @@ function WindowsGuide() {
 function MacGuide() {
   return (
     <div className="space-y-4">
-      {/* Option 1: Cloud */}
-      <Card>
-        <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 1 — Free cloud models (easiest)</SectionTitle>
-          <div className="flex gap-1.5">
-            <Tag color="green">No install</Tag>
-            <Tag color="blue">Free</Tag>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <Step n={1}>
-            Go to <ExternalLink href="https://openrouter.ai/keys">openrouter.ai/keys</ExternalLink> and
-            create a free account (just email, no credit card).
-          </Step>
-          <Step n={2}>
-            Click <strong className="text-white">Create key</strong>, copy the key
-            (starts with <code className="bg-black/30 px-1 rounded text-slate-300">sk-or-</code>).
-          </Step>
-          <Step n={3}>
-            In this app, open the model picker → <strong className="text-white">Cloud tab</strong> →
-            paste the key under <strong className="text-white">OpenRouter key</strong> → Save.
-          </Step>
-          <Step n={4}>
-            Select <strong className="text-white">Best available</strong> → click{" "}
-            <strong className="text-white">Use</strong>. Done.
-          </Step>
-        </div>
-      </Card>
+      <CloudCards />
 
-      {/* Option 2: Ollama */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 2 — Ollama (private, runs on your Mac)</SectionTitle>
+          <SectionTitle>Option 3 — Ollama (private, runs on your Mac)</SectionTitle>
           <div className="flex gap-1.5">
             <Tag color="purple">Fully private</Tag>
             <Tag color="green">Free forever</Tag>
           </div>
         </div>
         <p className="mb-3 text-xs text-slate-500 leading-relaxed">
-          Your messages never leave your Mac. Works great on Apple Silicon (M1/M2/M3/M4) and
-          requires ~4 GB free disk space per model.
+          Your messages never leave your Mac. Works especially well on Apple Silicon (M1/M2/M3/M4)
+          and requires ~4 GB free disk space per model.
         </p>
         <div className="space-y-3">
           <Step n={1}>
             Download Ollama from{" "}
             <ExternalLink href="https://ollama.com/download/mac">ollama.com/download/mac</ExternalLink>.
-            Open the downloaded file and drag Ollama to your Applications folder.
+            Open the downloaded file and drag Ollama to your Applications folder, then open it.
           </Step>
           <Step n={2}>
-            Open <strong className="text-white">Terminal</strong> (search with Spotlight: press{" "}
+            Open <strong className="text-white">Terminal</strong> — press{" "}
             <code className="bg-black/30 px-1 rounded text-slate-300">Cmd + Space</code>, type{" "}
-            <em>Terminal</em>) and run:
+            <em>Terminal</em>, press Enter. Then download a model:
             <Cmd>ollama pull llama3.2</Cmd>
-            This downloads about 2 GB. Browse more at{" "}
+            About 2 GB. Browse more at{" "}
             <ExternalLink href="https://ollama.com/library">ollama.com/library</ExternalLink>.
           </Step>
           <Step n={3}>
@@ -334,10 +421,9 @@ function MacGuide() {
         </p>
       </Card>
 
-      {/* Option 3: Browser */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Option 3 — Runs directly in the browser</SectionTitle>
+          <SectionTitle>Option 4 — Runs directly in the browser</SectionTitle>
           <div className="flex gap-1.5">
             <Tag color="purple">Fully private</Tag>
             <Tag color="yellow">Needs Chrome / Edge</Tag>
@@ -374,8 +460,6 @@ export default function SetupPage() {
     setDetected(p);
   }, []);
 
-  const isMobile = platform === "ios" || platform === "android";
-
   return (
     <div className="min-h-screen bg-surface text-white">
       <div className="mx-auto max-w-2xl px-4 py-10 pb-20">
@@ -384,7 +468,7 @@ export default function SetupPage() {
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-white">Get started</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Follow the steps for your device below. You only need to do this once.
+            Follow the steps for your device. You only need to do this once.
           </p>
         </div>
 
@@ -395,7 +479,7 @@ export default function SetupPage() {
               ? `Detected: ${PLATFORM_LABELS[detected]} — or pick your device below`
               : "Select your device"}
           </p>
-          <div className="flex gap-2 rounded-xl bg-white/5 p-1">
+          <div className="flex gap-1 rounded-xl bg-white/5 p-1">
             {(Object.keys(PLATFORM_LABELS) as Platform[]).map((p) => (
               <button
                 key={p}
@@ -414,9 +498,10 @@ export default function SetupPage() {
         </div>
 
         {/* Content */}
-        {isMobile  ? <MobileGuide /> : null}
-        {platform === "windows" ? <WindowsGuide /> : null}
-        {platform === "mac"     ? <MacGuide /> : null}
+        {platform === "ios"     && <IOSGuide />}
+        {platform === "android" && <AndroidGuide />}
+        {platform === "windows" && <WindowsGuide />}
+        {platform === "mac"     && <MacGuide />}
 
         {/* Footer */}
         <div className="mt-8 flex flex-col items-center gap-3">
