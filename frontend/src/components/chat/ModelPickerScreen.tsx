@@ -316,24 +316,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                       </p>
                     </div>
                     {suggestions.map((s) => (
-                      <div
-                        key={s.pull}
-                        className="flex items-start gap-3 px-4 py-2.5 bg-surface-secondary"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-sm text-slate-200 font-medium">{s.label}</span>
-                            {s.tags?.map((t) => (
-                              <span key={t} className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400">{t}</span>
-                            ))}
-                          </div>
-                          <p className="text-xs text-slate-500 mb-1.5">{s.description}</p>
-                          <code className="text-[11px] font-mono text-emerald-400 select-all">
-                            ollama pull {s.pull}
-                          </code>
-                        </div>
-                        <span className="text-xs text-slate-500 shrink-0 mt-0.5">~{s.sizeGB} GB</span>
-                      </div>
+                      <SuggestionRow key={s.pull} suggestion={s} />
                     ))}
                   </>}
 
@@ -567,6 +550,66 @@ function Pill({ children, green, blue, yellow, accent, red }: {
     )}>
       {children}
     </span>
+  );
+}
+
+function SuggestionRow({ suggestion: s }: { suggestion: import("@/lib/ollamaSuggestions").OllamaSuggestion }) {
+  const [copied, setCopied] = useState(false);
+  const cmd = `ollama pull ${s.pull}`;
+
+  function copy() {
+    navigator.clipboard.writeText(cmd).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 bg-surface-secondary border-b border-surface-border last:border-0">
+      {/* Info */}
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-slate-200 font-medium">{s.label}</span>
+          <span className="text-xs text-slate-500">~{s.sizeGB} GB</span>
+          {s.tags?.map((t) => (
+            <span key={t} className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400">{t}</span>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed">{s.description}</p>
+        {/* Pull command + copy */}
+        <div className="flex items-center gap-2 mt-1">
+          <code className="flex-1 rounded-md bg-black/40 px-2.5 py-1.5 text-[11px] font-mono text-emerald-400 select-all truncate">
+            {cmd}
+          </code>
+          <button
+            onClick={copy}
+            title="Copy command"
+            className={clsx(
+              "shrink-0 flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold transition-colors",
+              copied
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+            )}
+          >
+            {copied ? (
+              <>
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                Copied
+              </>
+            ) : (
+              <>
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                </svg>
+                Copy
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
