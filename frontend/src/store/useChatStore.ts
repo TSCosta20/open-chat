@@ -2,6 +2,17 @@ import { create } from "zustand";
 import type { Chat, Message, ModelId } from "@/types";
 import { DEFAULT_MODEL } from "@/types";
 
+const LAST_MODEL_KEY = "oc_last_model";
+
+function readLastModel(): ModelId {
+  if (typeof window === "undefined") return DEFAULT_MODEL;
+  return localStorage.getItem(LAST_MODEL_KEY) ?? DEFAULT_MODEL;
+}
+
+function saveLastModel(model: ModelId) {
+  if (typeof window !== "undefined") localStorage.setItem(LAST_MODEL_KEY, model);
+}
+
 interface ChatStore {
   // State
   chats: Chat[];
@@ -107,10 +118,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setCloudStatus: (chatId, status) =>
     set((s) => ({ cloudStatus: { ...s.cloudStatus, [chatId]: status } })),
 
-  setModelForChat: (chatId, model) =>
-    set((s) => ({ selectedModel: { ...s.selectedModel, [chatId]: model } })),
+  setModelForChat: (chatId, model) => {
+    saveLastModel(model);
+    set((s) => ({ selectedModel: { ...s.selectedModel, [chatId]: model } }));
+  },
 
-  getModelForChat: (chatId) => get().selectedModel[chatId] ?? DEFAULT_MODEL,
+  getModelForChat: (chatId) => get().selectedModel[chatId] ?? readLastModel(),
 
   setModelReady: (ready) => set({ modelReady: ready }),
 
