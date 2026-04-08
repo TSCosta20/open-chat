@@ -27,6 +27,8 @@ async function detectCapability(): Promise<DeviceCapability> {
     return {
       estimatedVramGB: 0,
       deviceMemoryGB,
+      vramBudgetGB: 0,
+      ramBudgetGB: deviceMemoryGB / 2.5,
       hasWebGPU: false,
       recommendedModel: DEFAULT_MODEL,
       ready: true,
