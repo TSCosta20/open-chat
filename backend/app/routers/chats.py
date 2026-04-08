@@ -54,7 +54,10 @@ def rename_chat(
     )
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    chat.title = body.title
+    if body.title is not None:
+        chat.title = body.title
+    if body.model is not None:
+        chat.model = body.model
     db.commit()
     db.refresh(chat)
     return chat

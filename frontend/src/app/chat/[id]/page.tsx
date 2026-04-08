@@ -30,7 +30,14 @@ export default function ChatPage({ params }: Props) {
   useEffect(() => {
     if (!messages[id] && session?.backendToken) {
       fetchMessages(id, session.backendToken)
-        .then((msgs) => setMessages(id, msgs))
+        .then((msgs) => {
+          setMessages(id, msgs);
+          // Restore model saved for this chat on another device
+          const chat = useChatStore.getState().chats.find((c) => c.id === id);
+          if (chat?.model && chat.model !== "unknown") {
+            useChatStore.getState().setModelForChat(id, chat.model);
+          }
+        })
         .catch(() => setMessages(id, []));
     }
   }, [id, messages, setMessages, session?.backendToken]);

@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import clsx from "clsx";
 import { useChatStore } from "@/store/useChatStore";
+import { useSession } from "next-auth/react";
 import { useWebLLM } from "@/hooks/useWebLLM";
 import { useTransformersJS } from "@/hooks/useTransformersJS";
 import { useDeviceCapability } from "@/hooks/useDeviceCapability";
 import { useCachedModels } from "@/hooks/useCachedModels";
 import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
 import { useApiKeys } from "@/hooks/useApiKeys";
+import { updateChatModel } from "@/lib/api";
 import {
   AVAILABLE_MODELS,
   CLOUD_MODELS,
@@ -36,6 +38,7 @@ export function ModelPickerScreen({ chatId }: Props) {
 
   const pickerLocalOnly = useChatStore((s) => s.pickerLocalOnly);
   const setPickerLocalOnly = useChatStore((s) => s.setPickerLocalOnly);
+  const { data: session } = useSession();
 
   const [loading, setLoading]           = useState(false);
   const [page, setPage]                 = useState(0);
@@ -69,6 +72,8 @@ export function ModelPickerScreen({ chatId }: Props) {
         await loadWebLLM(selectedModel);
       }
       setPickerLocalOnly(false);
+      // Persist model choice to backend so other devices see the same model
+      updateChatModel(chatId, selectedModel, session?.backendToken);
     } finally {
       setLoading(false);
     }

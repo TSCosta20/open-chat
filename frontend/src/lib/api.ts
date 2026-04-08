@@ -57,6 +57,14 @@ export async function renameChat(id: string, title: string, token?: string): Pro
   return toChat(await res.json());
 }
 
+export async function updateChatModel(id: string, model: string, token?: string): Promise<void> {
+  await fetch(`${API_URL}/chats/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ model }),
+  }).catch(() => {});
+}
+
 export async function deleteChat(id: string, token?: string): Promise<void> {
   const res = await fetch(`${API_URL}/chats/${id}`, {
     method: "DELETE",

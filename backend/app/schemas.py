@@ -28,7 +28,8 @@ class ChatCreate(BaseModel):
 
 
 class ChatUpdate(BaseModel):
-    title: str
+    title: str | None = None
+    model: str | None = None
 
 
 class ChatResponse(BaseModel):
