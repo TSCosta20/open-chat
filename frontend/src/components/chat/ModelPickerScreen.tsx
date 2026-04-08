@@ -22,7 +22,6 @@ import {
   type ModelDef,
 } from "@/types";
 
-const WEBLLM_PAGE_SIZE = 5;
 type Tab = "cloud" | "transformers" | "webllm" | "ollama";
 
 interface Props { chatId: string }
@@ -44,7 +43,6 @@ export function ModelPickerScreen({ chatId }: Props) {
   const { data: session } = useSession();
 
   const [loading, setLoading]           = useState(false);
-  const [page, setPage]                 = useState(0);
   const [tab, setTab]                   = useState<Tab>(pickerLocalOnly ? "transformers" : "cloud");
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
   const [ollamaResult, setOllamaResult] = useState<OllamaCheckResult | "loading">("loading");
@@ -60,8 +58,6 @@ export function ModelPickerScreen({ chatId }: Props) {
   if (modelReady) return null;
 
   const isNoWebGPU  = cap.ready && !cap.hasWebGPU;
-  const totalPages  = Math.ceil(AVAILABLE_MODELS.length / WEBLLM_PAGE_SIZE);
-  const pageModels  = AVAILABLE_MODELS.slice(page * WEBLLM_PAGE_SIZE, (page + 1) * WEBLLM_PAGE_SIZE);
   const ollamaList  = ollamaResult !== "loading" && ollamaResult.status === "ok" ? ollamaResult.models : [];
   const allDefs     = [CHROME_AI_MODEL, ...CLOUD_MODELS, ...TRANSFORMERS_MODELS, ...AVAILABLE_MODELS];
   // For Ollama, selectedDef may not be in allDefs — detect by prefix
@@ -197,7 +193,7 @@ export function ModelPickerScreen({ chatId }: Props) {
             {tab === "webllm" && <>
               {isNoWebGPU
                 ? <NoWebGPU />
-                : pageModels.map((m: ModelDef) => {
+                : AVAILABLE_MODELS.map((m: ModelDef) => {
                     const recommended = cap.ready && m.id === cap.recommendedModel;
                     const heavy       = cap.ready && m.vramGB > cap.vramBudgetGB;
                     return (
@@ -412,41 +408,6 @@ export function ModelPickerScreen({ chatId }: Props) {
               </div>
             </div>
 
-          </div>
-        )}
-
-        {/* WebLLM pagination — only shown on webllm tab */}
-        {tab === "webllm" && !isNoWebGPU && totalPages > 1 && (
-          <div className="flex items-center justify-between px-1">
-            <button
-              onClick={() => setPage((p) => p - 1)}
-              disabled={page === 0 || loading}
-              className="text-xs text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-              </svg>
-              Prev
-            </button>
-            <div className="flex gap-1">
-              {Array.from({ length: totalPages }).map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setPage(i)}
-                  className={clsx("h-1.5 rounded-full transition-all", i === page ? "w-4 bg-accent" : "w-1.5 bg-slate-600")}
-                />
-              ))}
-            </div>
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={page === totalPages - 1 || loading}
-              className="text-xs text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
-            >
-              Next
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-            </button>
           </div>
         )}
 
