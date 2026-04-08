@@ -30,6 +30,15 @@ export const CHROME_AI_MODEL: ModelDef = {
 // ── Cloud models ──────────────────────────────────────────────────────────────
 
 export const CLOUD_MODELS: ModelDef[] = [
+  // Auto-select best available model
+  {
+    id: "cloud:openrouter:auto",
+    name: "Best available",
+    vramGB: 0, minRamGB: 0,
+    fast: true,
+    backend: "cloud",
+    cloudModelId: "openrouter:auto",
+  },
   // OpenRouter free tier — needs OPENROUTER_API_KEY on server
   {
     id: "cloud:meta-llama/llama-3.3-70b-instruct:free",

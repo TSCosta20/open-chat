@@ -32,6 +32,10 @@ interface ChatStore {
   clearStreamingContent: (chatId: string) => void;
   setIsStreaming: (chatId: string, val: boolean) => void;
 
+  // Cloud status (e.g. "Trying Llama 3.3 70B…")
+  cloudStatus: Record<string, string>;
+  setCloudStatus: (chatId: string, status: string) => void;
+
   // Model selection
   setModelForChat: (chatId: string, model: ModelId) => void;
   getModelForChat: (chatId: string) => ModelId;
@@ -47,6 +51,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   messages: {},
   streamingContent: {},
   isStreaming: {},
+  cloudStatus: {},
   selectedModel: {},
   modelReady: false,
   modelLoadProgress: 0,
@@ -98,6 +103,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setIsStreaming: (chatId, val) =>
     set((s) => ({ isStreaming: { ...s.isStreaming, [chatId]: val } })),
+
+  setCloudStatus: (chatId, status) =>
+    set((s) => ({ cloudStatus: { ...s.cloudStatus, [chatId]: status } })),
 
   setModelForChat: (chatId, model) =>
     set((s) => ({ selectedModel: { ...s.selectedModel, [chatId]: model } })),

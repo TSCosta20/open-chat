@@ -22,16 +22,23 @@ _GEMINI_URL = (
 # OpenRouter (OpenAI-compatible, streaming)
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# Priority order for automatic fallback
+OPENROUTER_FALLBACK_CHAIN = [
+    ("meta-llama/llama-3.3-70b-instruct:free",  "Llama 3.3 70B"),
+    ("meta-llama/llama-3.1-8b-instruct:free",   "Llama 3.1 8B"),
+    ("google/gemma-3-27b-it:free",               "Gemma 3 27B"),
+    ("google/gemma-3-12b-it:free",               "Gemma 3 12B"),
+    ("deepseek/deepseek-r1-0528:free",           "DeepSeek R1"),
+]
+
 ALLOWED_MODELS = {
     # Gemini — user supplies GEMINI_API_KEY
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
-    # OpenRouter free tier — user supplies OPENROUTER_API_KEY
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "google/gemma-3-12b-it:free",
-    "deepseek/deepseek-r1-0528:free",
+    # OpenRouter free tier
+    *(model_id for model_id, _ in OPENROUTER_FALLBACK_CHAIN),
+    # Special sentinel: auto-select best available
+    "openrouter:auto",
 }
 
 
@@ -136,6 +143,10 @@ class CloudChatRequestWithKeys(CloudChatRequest):
     gemini_key: str = ""
 
 
+def _status(msg: str) -> str:
+    return f"data: {json.dumps({'type': 'status', 'text': msg})}\n\n"
+
+
 @router.post("/chat/cloud")
 async def cloud_chat(
     body: CloudChatRequestWithKeys,
@@ -146,22 +157,7 @@ async def cloud_chat(
         raise HTTPException(status_code=400, detail=f"Unsupported model: {body.model}")
 
     is_gemini = body.model.startswith("gemini-")
-
-    if is_gemini:
-        # User-provided key takes priority over server env var
-        api_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
-        if not api_key:
-            raise HTTPException(
-                status_code=503,
-                detail="Gemini API key required. Add your key in the model picker."
-            )
-    else:
-        api_key = body.openrouter_key or os.environ.get("OPENROUTER_API_KEY", "")
-        if not api_key:
-            raise HTTPException(
-                status_code=503,
-                detail="OpenRouter API key required. Add your key in the model picker."
-            )
+    use_auto  = body.model == "openrouter:auto"
 
     chat = (
         db.query(models.Chat)
@@ -180,20 +176,77 @@ async def cloud_chat(
 
     async def generate():
         full_text = ""
-        stream = (
-            _stream_gemini(body.model, history, body.content, api_key)
-            if is_gemini
-            else _stream_openrouter(body.model, history, body.content, api_key)
-        )
-        try:
-            async for token, error in stream:
-                if error:
-                    yield f"data: {json.dumps({'error': error})}\n\n"
-                    return
-                full_text += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
 
-            # Persist both messages after stream completes
+        # ── Gemini (direct, no fallback needed) ──────────────────────────
+        if is_gemini:
+            api_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
+            if not api_key:
+                yield f"data: {json.dumps({'error': 'Gemini API key required. Add your key in the model picker.'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            yield _status(f"Using Gemini…")
+            try:
+                async for token, error in _stream_gemini(body.model, history, body.content, api_key):
+                    if error:
+                        yield f"data: {json.dumps({'error': error})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                    full_text += token
+                    yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+        # ── OpenRouter with automatic fallback chain ──────────────────────
+        else:
+            api_key = body.openrouter_key or os.environ.get("OPENROUTER_API_KEY", "")
+            if not api_key:
+                yield f"data: {json.dumps({'error': 'OpenRouter API key required. Add your key in the model picker.'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # Build chain: if a specific model was requested, try it first then fall through
+            if use_auto:
+                chain = OPENROUTER_FALLBACK_CHAIN
+            else:
+                requested_label = next((label for mid, label in OPENROUTER_FALLBACK_CHAIN if mid == body.model), body.model)
+                rest = [(mid, label) for mid, label in OPENROUTER_FALLBACK_CHAIN if mid != body.model]
+                chain = [(body.model, requested_label)] + rest
+
+            succeeded = False
+            for model_id, model_label in chain:
+                yield _status(f"Trying {model_label}…")
+                got_token = False
+                failed = False
+
+                try:
+                    async for token, error in _stream_openrouter(model_id, history, body.content, api_key):
+                        if error:
+                            failed = True
+                            break
+                        if not got_token:
+                            # First real token — clear status
+                            yield _status("")
+                            got_token = True
+                        full_text += token
+                        yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                except Exception:
+                    failed = True
+
+                if not failed:
+                    succeeded = True
+                    break
+
+                yield _status(f"{model_label} unavailable — trying next…")
+
+            if not succeeded:
+                yield f"data: {json.dumps({'error': 'All models are currently unavailable. Please try again in a moment.'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+        # Persist after successful generation
+        if full_text:
             for role, content in [("user", body.content), ("assistant", full_text)]:
                 db.add(models.Message(
                     id=str(uuid.uuid4()),
@@ -202,8 +255,6 @@ async def cloud_chat(
                     content=content,
                 ))
             db.commit()
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         yield "data: [DONE]\n\n"
 

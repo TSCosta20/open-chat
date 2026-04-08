@@ -10,6 +10,7 @@ import { renameChat } from "@/lib/api";
 import { speak } from "@/hooks/useVoiceInput";
 import { ALL_MODELS } from "@/types";
 import type { Message } from "@/types";
+
 import { getStoredApiKeys } from "@/hooks/useApiKeys";
 
 export function useChat(chatId: string) {
@@ -60,6 +61,7 @@ export function useChat(chatId: string) {
             modelDef.cloudModelId!,
             token,
             onToken,
+            (s) => store.setCloudStatus(chatId, s),
             openRouterKey,
             geminiKey,
           );
@@ -108,6 +110,7 @@ export function useChat(chatId: string) {
       } finally {
         store.clearStreamingContent(chatId);
         store.setIsStreaming(chatId, false);
+        store.setCloudStatus(chatId, "");
       }
     },
     [chatId, store, generateWebLLM, generateTransformers, generateChromeAI, session?.backendToken]
@@ -124,6 +127,7 @@ async function streamCloud(
   cloudModelId: string,
   authToken: string | undefined,
   onToken: (t: string) => void,
+  onStatus: (s: string) => void,
   openRouterKey = "",
   geminiKey = "",
 ): Promise<string> {
@@ -168,9 +172,12 @@ async function streamCloud(
       try {
         const parsed = JSON.parse(data);
         if (parsed.error) throw new Error(parsed.error);
-        if (parsed.token) {
-          full += parsed.token;
-          onToken(parsed.token);
+        if (parsed.type === "status") {
+          onStatus(parsed.text ?? "");
+        } else if (parsed.type === "token" || parsed.token) {
+          const tok = parsed.text ?? parsed.token;
+          full += tok;
+          onToken(tok);
         }
       } catch (e) {
         if (e instanceof SyntaxError) continue; // incomplete chunk
