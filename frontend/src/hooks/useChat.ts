@@ -59,17 +59,24 @@ export function useChat(chatId: string) {
       let cloudHandledPersist = false;
 
       try {
+        // Resolve the actual cloud model ID for both static and dynamic cloud models
+        const cloudModelId = modelDef?.backend === "cloud"
+          ? modelDef.cloudModelId!
+          : selectedModel.startsWith("cloud:") && !modelDef
+          ? selectedModel.slice(6) // strip "cloud:" prefix → raw OR model ID
+          : null;
+
         if (selectedModel.startsWith("ollama:")) {
           const ollamaModelName = selectedModel.slice(7);
           finalContent = await generateOllama(ollamaModelName, llmMessages, onToken);
         } else if (modelDef?.backend === "chrome-ai") {
           finalContent = await generateChromeAI(llmMessages, onToken);
-        } else if (modelDef?.backend === "cloud") {
+        } else if (cloudModelId) {
           const { openRouterKey, geminiKey } = getStoredApiKeys();
           finalContent = await streamCloud(
             chatId,
             content,
-            modelDef.cloudModelId!,
+            cloudModelId,
             token,
             onToken,
             (s) => store.setCloudStatus(chatId, s),

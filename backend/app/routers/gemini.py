@@ -31,15 +31,26 @@ OPENROUTER_FALLBACK_CHAIN = [
     ("deepseek/deepseek-r1-0528:free",           "DeepSeek R1"),
 ]
 
-ALLOWED_MODELS = {
-    # Gemini — user supplies GEMINI_API_KEY
+GEMINI_MODELS = {
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
-    # OpenRouter free tier
-    *(model_id for model_id, _ in OPENROUTER_FALLBACK_CHAIN),
-    # Special sentinel: auto-select best available
-    "openrouter:auto",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
 }
+
+
+def _is_allowed(model: str) -> bool:
+    """Accept Gemini models, openrouter:auto, and any OpenRouter free-tier model."""
+    if model in GEMINI_MODELS:
+        return True
+    if model == "openrouter:auto":
+        return True
+    # Any OpenRouter free model (ends with :free and contains a slash = provider/model)
+    if model.endswith(":free") and "/" in model:
+        return True
+    return False
 
 
 class CloudChatRequest(BaseModel):
@@ -153,7 +164,7 @@ async def cloud_chat(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_user_id),
 ):
-    if body.model not in ALLOWED_MODELS:
+    if not _is_allowed(body.model):
         raise HTTPException(status_code=400, detail=f"Unsupported model: {body.model}")
 
     is_gemini = body.model.startswith("gemini-")

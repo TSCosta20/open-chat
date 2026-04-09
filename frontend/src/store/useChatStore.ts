@@ -9,6 +9,12 @@ function readLastModel(): ModelId {
   return localStorage.getItem(LAST_MODEL_KEY) ?? DEFAULT_MODEL;
 }
 
+/** Returns true only if the user has ever explicitly chosen a model. */
+export function hasStoredModel(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(LAST_MODEL_KEY) !== null;
+}
+
 function saveLastModel(model: ModelId) {
   if (typeof window !== "undefined") localStorage.setItem(LAST_MODEL_KEY, model);
 }

@@ -11,6 +11,7 @@ import { useCachedModels } from "@/hooks/useCachedModels";
 import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
 import { checkOllama, type OllamaModelInfo, type OllamaCheckResult } from "@/hooks/useOllama";
 import { getSuggestionsForDevice } from "@/lib/ollamaSuggestions";
+import { useOpenRouterModels } from "@/hooks/useOpenRouterModels";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import Link from "next/link";
 import { updateChatModel } from "@/lib/api";
@@ -47,6 +48,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
   const [ollamaResult, setOllamaResult] = useState<OllamaCheckResult | "loading">("loading");
   const { openRouterKey, geminiKey, saveOpenRouterKey, saveGeminiKey } = useApiKeys();
+  const { models: orModels, loading: orLoading, error: orError } = useOpenRouterModels();
   const [orDraft, setOrDraft]           = useState("");
   const [geminiDraft, setGeminiDraft]   = useState("");
   const [orSaved, setOrSaved]           = useState(false);
@@ -62,13 +64,17 @@ export function ModelPickerScreen({ chatId }: Props) {
   const allDefs     = [CHROME_AI_MODEL, ...CLOUD_MODELS, ...TRANSFORMERS_MODELS, ...AVAILABLE_MODELS];
   // For Ollama, selectedDef may not be in allDefs — detect by prefix
   const isOllamaSelected = selectedModel.startsWith("ollama:");
-  const selectedDef = isOllamaSelected ? undefined : allDefs.find((m) => m.id === selectedModel);
+  // For dynamic OpenRouter models not in the static list
+  const isDynamicCloudSelected = selectedModel.startsWith("cloud:") && !allDefs.find((m) => m.id === selectedModel);
+  const selectedDef = (isOllamaSelected || isDynamicCloudSelected)
+    ? undefined
+    : allDefs.find((m) => m.id === selectedModel);
 
   async function handleLoad() {
-    if (!selectedModel || (!selectedDef && !isOllamaSelected)) return;
+    if (!selectedModel || (!selectedDef && !isOllamaSelected && !isDynamicCloudSelected)) return;
     setLoading(true);
     try {
-      if (isOllamaSelected) {
+      if (isOllamaSelected || isDynamicCloudSelected) {
         store.setModelReady(true);
       } else if (selectedDef!.backend === "chrome-ai" || selectedDef!.backend === "cloud") {
         store.setModelReady(true);
@@ -87,6 +93,10 @@ export function ModelPickerScreen({ chatId }: Props) {
 
   function loadLabel() {
     if (isOllamaSelected) return `Use ${selectedModel.slice(7)}`;
+    if (isDynamicCloudSelected) {
+      const orDef = orModels.find((m) => `cloud:${m.id}` === selectedModel);
+      return orDef ? `Use ${orDef.name}` : "Use selected model";
+    }
     if (!selectedDef) return "Select a model above";
     if (selectedDef.backend === "chrome-ai" || selectedDef.backend === "cloud")
       return `Use ${selectedDef.name}`;
@@ -137,39 +147,124 @@ export function ModelPickerScreen({ chatId }: Props) {
 
             {/* ── Cloud ──────────────────────────────────────────── */}
             {tab === "cloud" && <>
+              {/* Chrome AI (Gemini Nano built-in) */}
               {chromeStatus !== "unavailable" && (
                 <ModelRow
                   m={CHROME_AI_MODEL}
                   selected={selectedModel === CHROME_AI_MODEL.id}
                   disabled={loading}
                   onSelect={() => setModelForChat(chatId, CHROME_AI_MODEL.id)}
-                  badge={<Pill green>native · free</Pill>}
+                  badge={<Pill green>built-in · free</Pill>}
                 />
               )}
-              {CLOUD_MODELS.map((m) => {
-                const isGemini = m.cloudModelId?.startsWith("gemini-");
-                const hasKey = isGemini ? !!geminiKey : !!openRouterKey;
-                return (
-                  <ModelRow
-                    key={m.id}
-                    m={m}
-                    selected={selectedModel === m.id}
-                    disabled={loading}
-                    onSelect={() => setModelForChat(chatId, m.id)}
-                    badge={
-                      hasKey
-                        ? <Pill green>key saved</Pill>
-                        : isGemini
-                        ? <Pill blue>own key</Pill>
-                        : <Pill yellow>key needed</Pill>
-                    }
-                  />
-                );
-              })}
+
+              {/* Best Available auto-select */}
+              {!!openRouterKey && (
+                <ModelRow
+                  m={CLOUD_MODELS[0]}
+                  selected={selectedModel === CLOUD_MODELS[0].id}
+                  disabled={loading}
+                  onSelect={() => setModelForChat(chatId, CLOUD_MODELS[0].id)}
+                  badge={<Pill accent>auto</Pill>}
+                />
+              )}
+
+              {/* Gemini (own key) */}
+              {CLOUD_MODELS.filter((m) => m.cloudModelId?.startsWith("gemini-")).map((m) => (
+                <ModelRow
+                  key={m.id}
+                  m={m}
+                  selected={selectedModel === m.id}
+                  disabled={loading}
+                  onSelect={() => setModelForChat(chatId, m.id)}
+                  badge={geminiKey ? <Pill green>key saved</Pill> : <Pill blue>own key</Pill>}
+                />
+              ))}
+
+              {/* Divider */}
+              <div className="px-4 py-2 bg-black/20 flex items-center gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                  OpenRouter free models
+                </p>
+                {!openRouterKey && (
+                  <span className="text-[10px] text-yellow-500">— key required</span>
+                )}
+              </div>
+
+              {/* Dynamic OpenRouter free models */}
+              {orLoading ? (
+                <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  Loading models from OpenRouter…
+                </div>
+              ) : orError ? (
+                <div className="px-4 py-3 text-xs text-slate-500">
+                  Could not load model list — check your connection.
+                </div>
+              ) : orModels.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-slate-500">No free models found.</div>
+              ) : (() => {
+                // Group by provider
+                const groups = new Map<string, typeof orModels>();
+                for (const m of orModels) {
+                  const g = groups.get(m.provider) ?? [];
+                  g.push(m);
+                  groups.set(m.provider, g);
+                }
+                return Array.from(groups.entries()).map(([provider, providerModels]) => (
+                  <div key={provider}>
+                    <div className="px-4 py-1.5 bg-black/10 border-b border-surface-border">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                        {providerLabel(provider)}
+                      </span>
+                    </div>
+                    {providerModels.map((m) => {
+                      const modelId = `cloud:${m.id}`;
+                      const ctx = m.contextLength >= 1000
+                        ? `${Math.round(m.contextLength / 1000)}k ctx`
+                        : "";
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => setModelForChat(chatId, modelId)}
+                          disabled={loading}
+                          className={clsx(
+                            "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                            selectedModel === modelId ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
+                            loading && "cursor-not-allowed opacity-50"
+                          )}
+                        >
+                          <span className={clsx(
+                            "h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
+                            selectedModel === modelId ? "border-accent" : "border-slate-600"
+                          )}>
+                            {selectedModel === modelId && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                          </span>
+                          <span className="flex-1 flex items-center gap-2 min-w-0 flex-wrap">
+                            <span className="text-sm text-slate-200 font-medium truncate">{m.name}</span>
+                            {m.hasRequestLimits
+                              ? <Pill yellow>limited</Pill>
+                              : <Pill green>free</Pill>}
+                          </span>
+                          {ctx && <span className="text-xs text-slate-600 shrink-0">{ctx}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ));
+              })()}
             </>}
 
             {/* ── Transformers.js ────────────────────────────────── */}
             {tab === "transformers" && <>
+              {cap.ready && cap.isLowEnd && (
+                <div className="px-4 py-3 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300 leading-relaxed">
+                  Your device has a low-end GPU (~{cap.estimatedVramGB.toFixed(1)} GB VRAM). Only very small models are allowed. <strong className="text-amber-200">Cloud is recommended</strong> for best results.
+                </div>
+              )}
               {isNoWebGPU
                 ? <NoWebGPU />
                 : TRANSFORMERS_MODELS.map((m) => {
@@ -191,6 +286,11 @@ export function ModelPickerScreen({ chatId }: Props) {
 
             {/* ── WebLLM ─────────────────────────────────────────── */}
             {tab === "webllm" && <>
+              {cap.ready && cap.isLowEnd && (
+                <div className="px-4 py-3 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300 leading-relaxed">
+                  Your device has a low-end GPU (~{cap.estimatedVramGB.toFixed(1)} GB VRAM). Only very small models are allowed. <strong className="text-amber-200">Cloud is recommended</strong> for best results.
+                </div>
+              )}
               {isNoWebGPU
                 ? <NoWebGPU />
                 : AVAILABLE_MODELS.map((m: ModelDef) => {
@@ -218,6 +318,11 @@ export function ModelPickerScreen({ chatId }: Props) {
 
             {/* ── Ollama ─────────────────────────────────────────── */}
             {tab === "ollama" && <>
+              {cap.ready && cap.isLowEnd && (
+                <div className="px-4 py-3 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300 leading-relaxed">
+                  Ollama runs on CPU. Your device's processor is likely too slow for comfortable AI responses — even small models may take a long time. <strong className="text-amber-200">Cloud is strongly recommended</strong> for this device.
+                </div>
+              )}
               {ollamaResult === "loading" ? (
                 <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
                   <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -274,7 +379,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                   {ollamaList.map((m) => {
                     const modelId  = `ollama:${m.name}`;
                     const sizeGB   = m.size / 1024 ** 3;
-                    const needsGB  = sizeGB * 1.3;
+                    const needsGB  = sizeGB * 1.5;
                     const heavy    = cap.ready && needsGB > cap.ramBudgetGB;
                     const isSelected = selectedModel === modelId;
                     return (
@@ -426,9 +531,9 @@ export function ModelPickerScreen({ chatId }: Props) {
           <button
             onClick={handleLoad}
             disabled={
-              (!selectedDef && !isOllamaSelected) ||
+              (!selectedDef && !isOllamaSelected && !isDynamicCloudSelected) ||
               (!!selectedDef && selectedDef.backend !== "cloud" && selectedDef.backend !== "chrome-ai" && cap.ready && selectedDef.vramGB > cap.vramBudgetGB) ||
-              (isOllamaSelected && cap.ready && (() => { const m = ollamaList.find(o => `ollama:${o.name}` === selectedModel); return !!m && (m.size / 1024**3) * 1.3 > cap.ramBudgetGB; })())
+              (isOllamaSelected && cap.ready && (() => { const m = ollamaList.find(o => `ollama:${o.name}` === selectedModel); return !!m && (m.size / 1024**3) * 1.5 > cap.ramBudgetGB; })())
             }
             className="w-full rounded-xl bg-accent py-2.5 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
@@ -580,4 +685,27 @@ function NoWebGPU() {
       WebGPU not available — use Chrome 113+ or Edge.
     </div>
   );
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  "meta-llama":       "Meta · Llama",
+  "google":           "Google",
+  "deepseek":         "DeepSeek",
+  "qwen":             "Alibaba · Qwen",
+  "mistralai":        "Mistral AI",
+  "microsoft":        "Microsoft · Phi",
+  "nvidia":           "NVIDIA",
+  "nousresearch":     "Nous Research",
+  "cohere":           "Cohere",
+  "anthropic":        "Anthropic",
+  "openai":           "OpenAI",
+  "x-ai":             "xAI · Grok",
+  "amazon":           "Amazon",
+  "01-ai":            "01.AI · Yi",
+  "moonshotai":       "Moonshot AI",
+  "tngtech":          "TNG Tech",
+};
+
+function providerLabel(slug: string): string {
+  return PROVIDER_LABELS[slug] ?? slug.replace(/-/g, " ");
 }

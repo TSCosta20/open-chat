@@ -146,7 +146,7 @@ export function getSuggestionsForDevice(
   installedNames: Set<string>,
 ): OllamaSuggestion[] {
   return OLLAMA_SUGGESTIONS
-    .filter((s) => s.sizeGB * 1.3 <= ramBudgetGB)        // runtime overhead ×1.3
+    .filter((s) => s.sizeGB * 1.5 <= ramBudgetGB)        // runtime overhead ×1.5
     .filter((s) => !installedNames.has(s.pull))           // hide already installed
     .sort((a, b) => b.recency - a.recency || b.sizeGB - a.sizeGB);
 }

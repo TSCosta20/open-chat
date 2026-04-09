@@ -2,7 +2,7 @@
 
 import { use, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useChatStore } from "@/store/useChatStore";
+import { useChatStore, hasStoredModel } from "@/store/useChatStore";
 import { fetchMessages } from "@/lib/api";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { InputBar } from "@/components/chat/InputBar";
@@ -24,6 +24,10 @@ export default function ChatPage({ params }: Props) {
 
   useEffect(() => {
     setActiveChatId(id);
+    // If a model was previously chosen (localStorage), skip the picker
+    if (hasStoredModel()) {
+      useChatStore.getState().setModelReady(true);
+    }
     return () => setActiveChatId(null);
   }, [id, setActiveChatId]);
 
@@ -36,6 +40,7 @@ export default function ChatPage({ params }: Props) {
           const chat = useChatStore.getState().chats.find((c) => c.id === id);
           if (chat?.model && chat.model !== "unknown") {
             useChatStore.getState().setModelForChat(id, chat.model);
+            useChatStore.getState().setModelReady(true);
           }
         })
         .catch(() => setMessages(id, []));
