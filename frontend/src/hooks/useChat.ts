@@ -131,13 +131,29 @@ export function useChat(chatId: string) {
         }
 
         if (finalContent) {
+          const assistantMsgId = crypto.randomUUID();
           const assistantMsg: Message = {
-            id: crypto.randomUUID(),
+            id: assistantMsgId,
             chatId,
             role: "assistant",
             content: finalContent,
             createdAt: new Date().toISOString(),
           };
+
+          const state = useChatStore.getState();
+          const resolvedCloud = state.cloudModelInUse[chatId];
+          const meta =
+            cloudModelId
+              ? resolvedCloud
+                ? { label: resolvedCloud.label, provider: resolvedCloud.provider, id: resolvedCloud.id }
+                : { label: cloudModelId === "openrouter:auto" ? "Best available" : cloudModelId, provider: "cloud", id: cloudModelId }
+              : selectedModel.startsWith("ollama:")
+              ? { label: selectedModel.slice(7), provider: "ollama", id: selectedModel.slice(7) }
+              : modelDef
+              ? { label: modelDef.name, provider: modelDef.backend, id: modelDef.id }
+              : null;
+
+          if (meta) store.setMessageMeta(assistantMsgId, meta);
           store.appendMessage(chatId, assistantMsg);
 
           // Auto-title on first exchange

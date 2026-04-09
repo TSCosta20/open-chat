@@ -65,6 +65,7 @@ interface Props {
 
 export function MessageBubble({ message }: Props) {
   const isUser = message.role === "user";
+  const meta = useChatStore((s) => s.messageMeta[message.id] ?? null);
 
   if (message.content === "__SUGGEST_LOCAL__")    return <SuggestLocalBubble />;
   if (message.content === "__TOO_HEAVY__")        return <TooHeavyBubble />;
@@ -88,21 +89,31 @@ export function MessageBubble({ message }: Props) {
       </div>
 
       {/* Bubble */}
-      <div
-        className={clsx(
-          "max-w-[75%] rounded-2xl px-4 py-3 text-sm",
-          isUser
-            ? "rounded-tr-sm bg-accent text-white"
-            : "rounded-tl-sm bg-surface-secondary text-slate-100"
+      <div className={clsx("max-w-[75%] flex flex-col", isUser && "items-end")}>
+        {!isUser && meta?.label && (
+          <div
+            className="mb-1 px-1 text-[10px] text-slate-500"
+            title={meta.provider ? `${meta.label} (${meta.provider})` : meta.label}
+          >
+            via {meta.label}
+          </div>
         )}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-wrap break-words leading-relaxed">
-            {message.content}
-          </p>
-        ) : (
-          <Markdown content={message.content} />
-        )}
+        <div
+          className={clsx(
+            "rounded-2xl px-4 py-3 text-sm",
+            isUser
+              ? "rounded-tr-sm bg-accent text-white"
+              : "rounded-tl-sm bg-surface-secondary text-slate-100"
+          )}
+        >
+          {isUser ? (
+            <p className="whitespace-pre-wrap break-words leading-relaxed">
+              {message.content}
+            </p>
+          ) : (
+            <Markdown content={message.content} />
+          )}
+        </div>
       </div>
     </div>
   );

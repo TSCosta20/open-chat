@@ -44,6 +44,13 @@ interface ChatStore {
   setMessages: (chatId: string, messages: Message[]) => void;
   appendMessage: (chatId: string, message: Message) => void;
 
+  // Per-message metadata (UI-only)
+  messageMeta: Record<string, { label: string; provider?: string; id?: string } | null>;
+  setMessageMeta: (
+    messageId: string,
+    meta: { label: string; provider?: string; id?: string } | null,
+  ) => void;
+
   // Streaming actions
   appendStreamingContent: (chatId: string, token: string) => void;
   clearStreamingContent: (chatId: string) => void;
@@ -82,6 +89,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   chats: [],
   activeChatId: null,
   messages: {},
+  messageMeta: {},
   streamingContent: {},
   isStreaming: {},
   cloudStatus: {},
@@ -120,6 +128,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         [chatId]: [...(s.messages[chatId] ?? []), message],
       },
     })),
+
+  setMessageMeta: (messageId, meta) =>
+    set((s) => ({ messageMeta: { ...s.messageMeta, [messageId]: meta } })),
 
   appendStreamingContent: (chatId, token) =>
     set((s) => ({
