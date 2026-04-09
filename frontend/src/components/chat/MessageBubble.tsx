@@ -1,8 +1,10 @@
 "use client";
 
 import clsx from "clsx";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useChatStore } from "@/store/useChatStore";
+import { useChat } from "@/hooks/useChat";
 import type { Message } from "@/types";
 
 // Shared markdown styles for assistant bubbles
@@ -67,7 +69,8 @@ export function MessageBubble({ message }: Props) {
   const isUser = message.role === "user";
   const meta = useChatStore((s) => s.messageMeta[message.id] ?? null);
 
-  if (message.content === "__SUGGEST_LOCAL__")    return <SuggestLocalBubble />;
+  if (message.content === "__SUGGEST_LOCAL__")
+    return <SuggestLocalBubble chatId={message.chatId} messageId={message.id} />;
   if (message.content === "__TOO_HEAVY__")        return <TooHeavyBubble />;
   if (message.content === "__SWITCHED_TO_CLOUD__") return <SwitchedToCloudBubble />;
 
@@ -153,14 +156,58 @@ function TooHeavyBubble() {
   );
 }
 
-function SuggestLocalBubble() {
+function SuggestLocalBubble({ chatId, messageId }: { chatId: string; messageId: string }) {
   const setModelReady      = useChatStore((s) => s.setModelReady);
   const setPickerLocalOnly = useChatStore((s) => s.setPickerLocalOnly);
+  const setModelForChat    = useChatStore((s) => s.setModelForChat);
+  const removeMessage      = useChatStore((s) => s.removeMessage);
+  const isStreaming        = useChatStore((s) => s.isStreaming[chatId] ?? false);
+  const messages           = useChatStore((s) => s.messages[chatId] ?? []);
+  const { sendMessage }    = useChat(chatId);
+
+  const lastUserContent = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "user") return m.content;
+    }
+    return "";
+  }, [messages]);
+
+  const [autoRetry, setAutoRetry] = useState(false);
+  const [attemptsLeft, setAttemptsLeft] = useState(5);
 
   function handleSwitch() {
     setPickerLocalOnly(true);
     setModelReady(false);
   }
+
+  async function retryCloud(dismiss = true) {
+    if (!lastUserContent || isStreaming) return;
+    if (dismiss) removeMessage(chatId, messageId);
+    setPickerLocalOnly(false);
+    setModelForChat(chatId, "cloud:openrouter:auto");
+    setModelReady(true);
+    await sendMessage(lastUserContent, false, { suppressUserEcho: true });
+  }
+
+  function handleTryLater() {
+    setAutoRetry(false);
+    removeMessage(chatId, messageId);
+  }
+
+  useEffect(() => {
+    if (!autoRetry) return;
+    if (attemptsLeft <= 0) {
+      setAutoRetry(false);
+      return;
+    }
+    if (isStreaming) return;
+
+    const t = setTimeout(() => {
+      retryCloud(false).finally(() => setAttemptsLeft((n) => n - 1));
+    }, 20_000);
+    return () => clearTimeout(t);
+  }, [autoRetry, attemptsLeft, isStreaming, lastUserContent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex items-start gap-3 px-4 py-3">
@@ -172,15 +219,62 @@ function SuggestLocalBubble() {
           All cloud models are currently unavailable. You can switch to a free
           on-device model that runs entirely in your browser — no internet needed.
         </p>
-        <button
-          onClick={handleSwitch}
-          className="flex items-center gap-2 rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
-          </svg>
-          Switch to on-device model
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => retryCloud(true)}
+            disabled={!lastUserContent || isStreaming}
+            className={clsx(
+              "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+              !lastUserContent || isStreaming
+                ? "bg-white/5 text-slate-500 cursor-not-allowed"
+                : "bg-blue-500/15 text-blue-300 hover:bg-blue-500/25"
+            )}
+            title={!lastUserContent ? "No previous message to retry" : "Retry the last request"}
+          >
+            Try again
+          </button>
+
+          <button
+            onClick={() => {
+              if (autoRetry) {
+                setAutoRetry(false);
+                return;
+              }
+              setAttemptsLeft(5);
+              setAutoRetry(true);
+              retryCloud(false).finally(() => setAttemptsLeft((n) => n - 1));
+            }}
+            disabled={!lastUserContent}
+            className={clsx(
+              "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+              !lastUserContent
+                ? "bg-white/5 text-slate-500 cursor-not-allowed"
+                : autoRetry
+                ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                : "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+            )}
+            title={autoRetry ? "Stop auto-retrying" : "Automatically retry every ~20s"}
+          >
+            {autoRetry ? `Keep trying (${attemptsLeft})` : "Keep trying"}
+          </button>
+
+          <button
+            onClick={handleTryLater}
+            className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 transition-colors"
+          >
+            Try later
+          </button>
+
+          <button
+            onClick={handleSwitch}
+            className="flex items-center gap-2 rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+            </svg>
+            Switch to on-device model
+          </button>
+        </div>
       </div>
     </div>
   );

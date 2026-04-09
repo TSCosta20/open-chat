@@ -28,7 +28,11 @@ export function useChat(chatId: string) {
   const { data: session } = useSession();
 
   const sendMessage = useCallback(
-    async (content: string, speakResponse = false) => {
+    async (
+      content: string,
+      speakResponse = false,
+      opts?: { suppressUserEcho?: boolean },
+    ) => {
       const selectedModel = useChatStore.getState().getModelForChat(chatId);
       const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
 
@@ -42,14 +46,16 @@ export function useChat(chatId: string) {
         { role: "user" as const, content },
       ];
 
-      const userMsg: Message = {
-        id: crypto.randomUUID(),
-        chatId,
-        role: "user",
-        content,
-        createdAt: new Date().toISOString(),
-      };
-      store.appendMessage(chatId, userMsg);
+      if (!opts?.suppressUserEcho) {
+        const userMsg: Message = {
+          id: crypto.randomUUID(),
+          chatId,
+          role: "user",
+          content,
+          createdAt: new Date().toISOString(),
+        };
+        store.appendMessage(chatId, userMsg);
+      }
       store.setIsStreaming(chatId, true);
       store.clearStreamingContent(chatId);
 

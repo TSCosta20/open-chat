@@ -43,6 +43,7 @@ interface ChatStore {
   // Message actions
   setMessages: (chatId: string, messages: Message[]) => void;
   appendMessage: (chatId: string, message: Message) => void;
+  removeMessage: (chatId: string, messageId: string) => void;
 
   // Per-message metadata (UI-only)
   messageMeta: Record<string, { label: string; provider?: string; id?: string } | null>;
@@ -126,6 +127,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: {
         ...s.messages,
         [chatId]: [...(s.messages[chatId] ?? []), message],
+      },
+    })),
+
+  removeMessage: (chatId, messageId) =>
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [chatId]: (s.messages[chatId] ?? []).filter((m) => m.id !== messageId),
       },
     })),
 
