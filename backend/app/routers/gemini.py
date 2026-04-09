@@ -236,12 +236,15 @@ def _parse_openrouter_ratelimits(headers: httpx.Headers) -> dict | None:
     tok_limit = get_int("x-ratelimit-limit-tokens")
     tok_remaining = get_int("x-ratelimit-remaining-tokens")
     tok_reset = get_int("x-ratelimit-reset-tokens")
+    retry_after = get_int("retry-after")
 
     data: dict = {}
     if req_limit is not None or req_remaining is not None:
         data["requests"] = {"limit": req_limit, "remaining": req_remaining, "reset": req_reset}
     if tok_limit is not None or tok_remaining is not None:
         data["tokens"] = {"limit": tok_limit, "remaining": tok_remaining, "reset": tok_reset}
+    if retry_after is not None:
+        data["retryAfter"] = retry_after
 
     return data or None
 
@@ -266,6 +269,9 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
         async with client.stream("POST", _OPENROUTER_URL, json=body, headers=headers) as resp:
             if resp.status_code != 200:
                 err_body = await resp.aread()
+                meta = _parse_openrouter_ratelimits(resp.headers)
+                if meta:
+                    yield None, None, meta
                 if resp.status_code == 429:
                     yield None, "rate_limited", None
                 elif resp.status_code == 402:
@@ -370,6 +376,13 @@ async def cloud_chat(
             # (provider, model_id, label, score, rank)
             candidates: list[tuple[str, str, str, int, int]] = []
             reason_counts: dict[str, int] = {}
+            best_retry_after_s: int | None = None
+
+            def _fmt_wait(seconds: int) -> str:
+                if seconds < 90:
+                    return f"~{seconds}s"
+                mins = max(1, round(seconds / 60))
+                return f"~{mins}m"
 
             def _bump(reason: str):
                 reason_counts[reason] = reason_counts.get(reason, 0) + 1
@@ -442,6 +455,9 @@ async def cloud_chat(
                             if meta and not sent_usage:
                                 sent_usage = True
                                 yield f"data: {json.dumps({'type': 'usage', 'provider': 'openrouter', 'id': model_id, 'usage': meta})}\n\n"
+                                ra = meta.get("retryAfter")
+                                if isinstance(ra, int) and ra > 0:
+                                    best_retry_after_s = ra if best_retry_after_s is None else min(best_retry_after_s, ra)
                             if error:
                                 error_text = error
                                 break
@@ -505,6 +521,12 @@ async def cloud_chat(
                     "other": "Cloud request failed.",
                     "unknown": "Cloud request failed.",
                 }.get(primary, "Cloud request failed.")
+
+                if primary == "rate_limited":
+                    if best_retry_after_s is not None:
+                        reason_msg = f"{reason_msg} Try again in {_fmt_wait(best_retry_after_s)}."
+                    else:
+                        reason_msg = f"{reason_msg} Reset time was not provided by the provider."
 
                 yield f"data: {json.dumps({'error': msg, 'suggest_local': True, 'reason': reason_msg})}\n\n"
                 yield "data: [DONE]\n\n"
