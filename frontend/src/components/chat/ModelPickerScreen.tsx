@@ -217,14 +217,33 @@ export function ModelPickerScreen({ chatId }: Props) {
                   g.push(m);
                   groups.set(m.provider, g);
                 }
-                return Array.from(groups.entries()).map(([provider, providerModels]) => (
+
+                const providerEntries = Array.from(groups.entries()).map(([provider, models]) => {
+                  const bestQuality = models.reduce((best, mm) => Math.max(best, mm.quality ?? 0), 0);
+                  const sorted = [...models].sort((a, b) => {
+                    const qa = a.quality ?? 0;
+                    const qb = b.quality ?? 0;
+                    if (qa !== qb) return qb - qa;
+                    if (a.hasRequestLimits !== b.hasRequestLimits) return a.hasRequestLimits ? 1 : -1;
+                    if (a.contextLength !== b.contextLength) return b.contextLength - a.contextLength;
+                    return a.name.localeCompare(b.name);
+                  });
+                  return { provider, models: sorted, bestQuality };
+                });
+
+                providerEntries.sort((a, b) => {
+                  if (a.bestQuality !== b.bestQuality) return b.bestQuality - a.bestQuality;
+                  return providerLabel(a.provider).localeCompare(providerLabel(b.provider));
+                });
+
+                return providerEntries.map(({ provider, models }) => (
                   <div key={provider}>
                     <div className="px-4 py-1.5 bg-black/10 border-b border-surface-border">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
                         {providerLabel(provider)}
                       </span>
                     </div>
-                    {providerModels.map((m) => {
+                    {models.map((m) => {
                       const modelId = `cloud:${m.id}`;
                       const ctx = m.contextLength >= 1000
                         ? `${Math.round(m.contextLength / 1000)}k ctx`

@@ -12,6 +12,8 @@ export interface OpenRouterFreeModel {
   contextLength: number;
   /** Provider slug, e.g. "meta-llama", "google", "deepseek" */
   provider: string;
+  /** Higher = better (used for sorting in the model picker) */
+  quality: number;
   /**
    * True when OpenRouter imposes per-request token limits on this free tier
    * (indicates a restricted/weekly-style quota rather than fully open access).
@@ -112,6 +114,7 @@ export function useOpenRouterModels(): {
             description: m.description?.slice(0, 120),
             contextLength: m.context_length ?? 0,
             provider: parseProvider(m.id),
+            quality: MODEL_QUALITY[m.id] ?? 0,
             hasRequestLimits:
               !!m.per_request_limits &&
               Object.keys(m.per_request_limits).length > 0,
