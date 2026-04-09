@@ -183,7 +183,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   ];
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-4">
+    <div className="flex flex-1 flex-col items-center justify-start p-4 overflow-y-auto">
       {/* Card */}
       <div className="w-full max-w-md flex flex-col gap-3">
 
