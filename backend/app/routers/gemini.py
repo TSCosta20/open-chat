@@ -75,52 +75,70 @@ AUTO_MODEL_QUALITY: dict[str, int] = {
 
 # ── In-memory cache of free models from OpenRouter API ────────────────────────
 
-_or_cache: list[tuple[str, str]] = []   # [(model_id, display_name), ...]
+_or_cache: list[dict] = []
 _or_cache_ts: float = 0.0
 _OR_CACHE_TTL = 600  # seconds — refresh every 10 min
 
 
-async def _fetch_or_free_models(api_key: str) -> list[tuple[str, str]]:
-    """Return quality-ranked list of (model_id, display_name) from OpenRouter."""
+def _parse_provider(model_id: str) -> str:
+    return (model_id.split("/", 1)[0] or model_id) if "/" in model_id else model_id
+
+
+async def _fetch_or_free_models_detailed(api_key: str | None = None) -> list[dict]:
+    """Return quality-ranked list of OpenRouter free models with metadata."""
     global _or_cache, _or_cache_ts
 
     if _or_cache and (time.time() - _or_cache_ts) < _OR_CACHE_TTL:
         return _or_cache
 
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
     try:
         async with httpx.AsyncClient(timeout=8) as client:
-            resp = await client.get(
-                _OPENROUTER_MODELS,
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-            if resp.status_code == 200:
-                raw = resp.json().get("data", [])
-                free: list[tuple[str, str, int, int]] = []
-                for m in raw:
-                    mid = m.get("id", "")
-                    pricing = m.get("pricing", {})
-                    if (
-                        mid.endswith(":free")
-                        and "/" in mid
-                        and pricing.get("prompt") == "0"
-                        and pricing.get("completion") == "0"
-                    ):
-                        name = _clean_or_name(m.get("name", mid))
-                        score = MODEL_QUALITY.get(mid, 0)
-                        ctx = m.get("context_length") or 0
-                        free.append((mid, name, score, ctx))
+            resp = await client.get(_OPENROUTER_MODELS, headers=headers)
+            if resp.status_code != 200:
+                return _or_cache
 
-                # Sort: quality score desc, then context length desc
-                free.sort(key=lambda x: (-x[2], -x[3]))
-                result = [(mid, name) for mid, name, _, _ in free]
-                _or_cache = result
-                _or_cache_ts = time.time()
-                return result
+            raw = resp.json().get("data", [])
+            free: list[dict] = []
+            for m in raw:
+                mid = m.get("id", "")
+                pricing = m.get("pricing", {})
+                if not (
+                    mid.endswith(":free")
+                    and "/" in mid
+                    and pricing.get("prompt") == "0"
+                    and pricing.get("completion") == "0"
+                ):
+                    continue
+
+                name = _clean_or_name(m.get("name", mid))
+                score = MODEL_QUALITY.get(mid, 0)
+                ctx = m.get("context_length") or 0
+                per_req = m.get("per_request_limits") or {}
+                has_limits = bool(per_req) and len(per_req.keys()) > 0
+
+                free.append({
+                    "id": mid,
+                    "name": name,
+                    "provider": _parse_provider(mid),
+                    "contextLength": ctx,
+                    "hasRequestLimits": has_limits,
+                    "quality": score,
+                })
+
+            free.sort(key=lambda x: (-x["quality"], x["hasRequestLimits"], -(x["contextLength"] or 0), x["name"]))
+            _or_cache = free
+            _or_cache_ts = time.time()
+            return free
     except Exception:
-        pass
+        return _or_cache
 
-    # Fallback: return the hardcoded chain if fetch fails
-    return STATIC_FALLBACK_CHAIN
+
+async def _fetch_or_free_models(api_key: str) -> list[tuple[str, str]]:
+    """Return quality-ranked list of (model_id, display_name) from OpenRouter."""
+    models = await _fetch_or_free_models_detailed(api_key)
+    return [(m["id"], m["name"]) for m in models]
 
 
 def _clean_or_name(raw: str) -> str:
@@ -128,19 +146,10 @@ def _clean_or_name(raw: str) -> str:
     return re.sub(r"\s*[\(\[]free[\)\]]\s*", "", raw, flags=re.IGNORECASE).strip()
 
 
-# Static fallback in case the API is unreachable
-STATIC_FALLBACK_CHAIN: list[tuple[str, str]] = [
-    ("deepseek/deepseek-r1-0528:free",              "DeepSeek R1 (May 2025)"),
-    ("qwen/qwen3-235b-a22b:free",                   "Qwen3 235B"),
-    ("meta-llama/llama-3.3-70b-instruct:free",      "Llama 3.3 70B"),
-    ("nvidia/llama-3.1-nemotron-70b-instruct:free", "Nemotron 70B"),
-    ("deepseek/deepseek-r1:free",                   "DeepSeek R1"),
-    ("qwen/qwen-2.5-72b-instruct:free",             "Qwen 2.5 72B"),
-    ("google/gemma-3-27b-it:free",                  "Gemma 3 27B"),
-    ("google/gemma-3-12b-it:free",                  "Gemma 3 12B"),
-    ("meta-llama/llama-3.1-8b-instruct:free",       "Llama 3.1 8B"),
-    ("mistralai/mistral-nemo:free",                 "Mistral Nemo"),
-]
+@router.get("/models/openrouter/free")
+async def list_openrouter_free_models():
+    models = await _fetch_or_free_models_detailed()
+    return {"data": models}
 
 GEMINI_MODELS = {
     "gemini-2.0-flash",
