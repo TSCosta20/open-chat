@@ -69,8 +69,11 @@ export function MessageBubble({ message }: Props) {
   const isUser = message.role === "user";
   const meta = useChatStore((s) => s.messageMeta[message.id] ?? null);
 
-  if (message.content === "__SUGGEST_LOCAL__")
-    return <SuggestLocalBubble chatId={message.chatId} messageId={message.id} />;
+  if (message.content.startsWith("__SUGGEST_LOCAL__")) {
+    const prefix = "__SUGGEST_LOCAL__:";
+    const reason = message.content.startsWith(prefix) ? message.content.slice(prefix.length).trim() : "";
+    return <SuggestLocalBubble chatId={message.chatId} messageId={message.id} reason={reason} />;
+  }
   if (message.content === "__TOO_HEAVY__")        return <TooHeavyBubble />;
   if (message.content === "__SWITCHED_TO_CLOUD__") return <SwitchedToCloudBubble />;
 
@@ -156,7 +159,7 @@ function TooHeavyBubble() {
   );
 }
 
-function SuggestLocalBubble({ chatId, messageId }: { chatId: string; messageId: string }) {
+function SuggestLocalBubble({ chatId, messageId, reason }: { chatId: string; messageId: string; reason?: string }) {
   const setModelReady      = useChatStore((s) => s.setModelReady);
   const setPickerLocalOnly = useChatStore((s) => s.setPickerLocalOnly);
   const setModelForChat    = useChatStore((s) => s.setModelForChat);
@@ -219,6 +222,11 @@ function SuggestLocalBubble({ chatId, messageId }: { chatId: string; messageId: 
           All cloud models are currently unavailable. You can switch to a free
           on-device model that runs entirely in your browser — no internet needed.
         </p>
+        {!!reason && (
+          <p className="text-xs text-amber-300/80">
+            Reason: {reason}
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => retryCloud(true)}

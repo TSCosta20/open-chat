@@ -369,6 +369,33 @@ async def cloud_chat(
 
             # (provider, model_id, label, score, rank)
             candidates: list[tuple[str, str, str, int, int]] = []
+            reason_counts: dict[str, int] = {}
+
+            def _bump(reason: str):
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+            def _classify(provider: str, error_text: str) -> str:
+                if provider == "openrouter":
+                    if error_text in ("rate_limited", "quota_exceeded"):
+                        return error_text
+                    if error_text.startswith("Invalid OpenRouter API key"):
+                        return "invalid_key"
+                    if error_text.startswith("OpenRouter error:"):
+                        return "provider_error"
+                    if error_text == "unavailable":
+                        return "unavailable"
+                    return "other"
+                # Gemini
+                low = error_text.lower()
+                if "rate limit" in low:
+                    return "rate_limited"
+                if "invalid gemini api key" in low:
+                    return "invalid_key"
+                if error_text.startswith("Gemini error:"):
+                    return "provider_error"
+                if error_text == "unavailable":
+                    return "unavailable"
+                return "other"
 
             if openrouter_key:
                 or_chain = await _fetch_or_free_models(openrouter_key)
@@ -378,6 +405,11 @@ async def cloud_chat(
             if gemini_key:
                 for idx, (mid, label) in enumerate(AUTO_GEMINI_MODELS):
                     candidates.append(("gemini", mid, label, AUTO_MODEL_QUALITY.get(mid, 0), 1_000_000 + idx))
+
+            if not candidates:
+                yield f"data: {json.dumps({'error': 'No cloud models are available to try right now.', 'suggest_local': True, 'reason': 'No cloud models available to try.'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
             candidates.sort(key=lambda c: (-c[3], c[4]))
 
@@ -434,6 +466,7 @@ async def cloud_chat(
                     break
 
                 last_error = error_text
+                _bump(_classify(provider, error_text))
 
                 retryable = False
                 if provider == "openrouter":
@@ -457,7 +490,23 @@ async def cloud_chat(
 
             if not full_text:
                 msg = last_error or "No cloud models are available right now. Please try again."
-                yield f"data: {json.dumps({'error': msg, 'suggest_local': True})}\n\n"
+                # Pick a concise primary reason for the UI.
+                primary = "unknown"
+                for key in ("invalid_key", "quota_exceeded", "rate_limited", "unavailable", "provider_error", "other"):
+                    if reason_counts.get(key, 0) > 0:
+                        primary = key
+                        break
+                reason_msg = {
+                    "invalid_key": "Your cloud API key was rejected (invalid or expired).",
+                    "quota_exceeded": "Your cloud provider quota is exhausted.",
+                    "rate_limited": "Cloud providers are rate-limiting right now.",
+                    "unavailable": "Cloud providers are temporarily unavailable.",
+                    "provider_error": "Cloud provider returned an error.",
+                    "other": "Cloud request failed.",
+                    "unknown": "Cloud request failed.",
+                }.get(primary, "Cloud request failed.")
+
+                yield f"data: {json.dumps({'error': msg, 'suggest_local': True, 'reason': reason_msg})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 

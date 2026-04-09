@@ -37,7 +37,14 @@ export function useChat(chatId: string) {
       const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
 
       const existingHistory = (useChatStore.getState().messages[chatId] ?? [])
-        .filter((m) => !["__SUGGEST_LOCAL__", "__TOO_HEAVY__", "__SWITCHED_TO_CLOUD__"].includes(m.content));
+        .filter((m) => {
+          const c = m.content;
+          return !(
+            c === "__TOO_HEAVY__" ||
+            c === "__SWITCHED_TO_CLOUD__" ||
+            c.startsWith("__SUGGEST_LOCAL__")
+          );
+        });
       const llmMessages = [
         ...existingHistory.map((m) => ({
           role: m.role as "user" | "assistant",
@@ -179,6 +186,7 @@ export function useChat(chatId: string) {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
+        const suggestReason = msg.startsWith("suggest_local:") ? msg.slice("suggest_local:".length).trim() : "";
         const isSuggestLocal = msg.includes("suggest_local");
         const isTooHeavy =
           msg === "__TOO_HEAVY__" ||
@@ -220,7 +228,9 @@ export function useChat(chatId: string) {
             id: crypto.randomUUID(),
             chatId,
             role: "assistant",
-            content: isSuggestLocal ? "__SUGGEST_LOCAL__" : `Sorry, ${msg}. Please try again.`,
+            content: isSuggestLocal
+              ? (suggestReason ? `__SUGGEST_LOCAL__:${suggestReason}` : "__SUGGEST_LOCAL__")
+              : `Sorry, ${msg}. Please try again.`,
             createdAt: new Date().toISOString(),
           });
         }
@@ -291,7 +301,10 @@ async function streamCloud(
       try {
         const parsed = JSON.parse(data);
         if (parsed.error) {
-          if (parsed.suggest_local) throw new Error("suggest_local");
+          if (parsed.suggest_local) {
+            const reason = parsed.reason ?? parsed.error ?? "Cloud unavailable";
+            throw new Error(`suggest_local:${reason}`);
+          }
           throw new Error(parsed.error);
         }
         if (parsed.type === "status") {
