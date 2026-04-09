@@ -2,6 +2,7 @@
 import os
 import json
 import uuid
+import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -20,15 +21,113 @@ _GEMINI_URL = (
 )
 
 # OpenRouter (OpenAI-compatible, streaming)
-_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
+_OPENROUTER_MODELS  = "https://openrouter.ai/api/v1/models"
 
-# Priority order for automatic fallback
-OPENROUTER_FALLBACK_CHAIN = [
-    ("meta-llama/llama-3.3-70b-instruct:free",  "Llama 3.3 70B"),
-    ("meta-llama/llama-3.1-8b-instruct:free",   "Llama 3.1 8B"),
-    ("google/gemma-3-27b-it:free",               "Gemma 3 27B"),
-    ("google/gemma-3-12b-it:free",               "Gemma 3 12B"),
-    ("deepseek/deepseek-r1-0528:free",           "DeepSeek R1"),
+# ── Quality ranking ────────────────────────────────────────────────────────────
+# Higher score = try first. Models not listed default to score 0 (ranked by
+# context length among themselves). Update this as new standout models release.
+
+MODEL_QUALITY: dict[str, int] = {
+    # Tier 1 — best reasoning / largest capable models
+    "deepseek/deepseek-r1-0528:free":              100,
+    "qwen/qwen3-235b-a22b:free":                    97,
+    "meta-llama/llama-3.3-70b-instruct:free":       95,
+    "nvidia/llama-3.1-nemotron-70b-instruct:free":  93,
+    "deepseek/deepseek-r1:free":                    92,
+    "microsoft/phi-4-reasoning-plus:free":          90,
+    "nousresearch/hermes-3-llama-3.1-405b:free":    88,
+    # Tier 2 — very good
+    "qwen/qwen-2.5-72b-instruct:free":              85,
+    "qwen/qwen3-30b-a3b:free":                      83,
+    "deepseek/deepseek-chat-v3-5:free":             82,
+    "google/gemma-3-27b-it:free":                   80,
+    "microsoft/phi-4:free":                         79,
+    "microsoft/phi-4-reasoning:free":               78,
+    "google/gemma-3-12b-it:free":                   75,
+    # Tier 3 — solid mid-range
+    "qwen/qwen3-14b:free":                          70,
+    "qwen/qwen3-8b:free":                           68,
+    "mistralai/mistral-nemo:free":                  65,
+    "cohere/command-r7b-12-2024:free":              63,
+    "meta-llama/llama-3.1-8b-instruct:free":        62,
+    "google/gemma-2-9b-it:free":                    60,
+    # Tier 4 — small but functional
+    "qwen/qwen3-4b:free":                           50,
+    "google/gemma-3-4b-it:free":                    48,
+    "mistralai/mistral-7b-instruct:free":           45,
+    "qwen/qwen3-1.7b:free":                         35,
+    "google/gemma-3-1b-it:free":                    25,
+    "qwen/qwen3-0.6b:free":                         15,
+}
+
+# ── In-memory cache of free models from OpenRouter API ────────────────────────
+
+_or_cache: list[tuple[str, str]] = []   # [(model_id, display_name), ...]
+_or_cache_ts: float = 0.0
+_OR_CACHE_TTL = 600  # seconds — refresh every 10 min
+
+
+async def _fetch_or_free_models(api_key: str) -> list[tuple[str, str]]:
+    """Return quality-ranked list of (model_id, display_name) from OpenRouter."""
+    global _or_cache, _or_cache_ts
+
+    if _or_cache and (time.time() - _or_cache_ts) < _OR_CACHE_TTL:
+        return _or_cache
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get(
+                _OPENROUTER_MODELS,
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                raw = resp.json().get("data", [])
+                free: list[tuple[str, str, int, int]] = []
+                for m in raw:
+                    mid = m.get("id", "")
+                    pricing = m.get("pricing", {})
+                    if (
+                        mid.endswith(":free")
+                        and "/" in mid
+                        and pricing.get("prompt") == "0"
+                        and pricing.get("completion") == "0"
+                    ):
+                        name = _clean_or_name(m.get("name", mid))
+                        score = MODEL_QUALITY.get(mid, 0)
+                        ctx = m.get("context_length") or 0
+                        free.append((mid, name, score, ctx))
+
+                # Sort: quality score desc, then context length desc
+                free.sort(key=lambda x: (-x[2], -x[3]))
+                result = [(mid, name) for mid, name, _, _ in free]
+                _or_cache = result
+                _or_cache_ts = time.time()
+                return result
+    except Exception:
+        pass
+
+    # Fallback: return the hardcoded chain if fetch fails
+    return STATIC_FALLBACK_CHAIN
+
+
+def _clean_or_name(raw: str) -> str:
+    import re
+    return re.sub(r"\s*[\(\[]free[\)\]]\s*", "", raw, flags=re.IGNORECASE).strip()
+
+
+# Static fallback in case the API is unreachable
+STATIC_FALLBACK_CHAIN: list[tuple[str, str]] = [
+    ("deepseek/deepseek-r1-0528:free",              "DeepSeek R1 (May 2025)"),
+    ("qwen/qwen3-235b-a22b:free",                   "Qwen3 235B"),
+    ("meta-llama/llama-3.3-70b-instruct:free",      "Llama 3.3 70B"),
+    ("nvidia/llama-3.1-nemotron-70b-instruct:free", "Nemotron 70B"),
+    ("deepseek/deepseek-r1:free",                   "DeepSeek R1"),
+    ("qwen/qwen-2.5-72b-instruct:free",             "Qwen 2.5 72B"),
+    ("google/gemma-3-27b-it:free",                  "Gemma 3 27B"),
+    ("google/gemma-3-12b-it:free",                  "Gemma 3 12B"),
+    ("meta-llama/llama-3.1-8b-instruct:free",       "Llama 3.1 8B"),
+    ("mistralai/mistral-nemo:free",                 "Mistral Nemo"),
 ]
 
 GEMINI_MODELS = {
@@ -47,7 +146,6 @@ def _is_allowed(model: str) -> bool:
         return True
     if model == "openrouter:auto":
         return True
-    # Any OpenRouter free model (ends with :free and contains a slash = provider/model)
     if model.endswith(":free") and "/" in model:
         return True
     return False
@@ -56,7 +154,7 @@ def _is_allowed(model: str) -> bool:
 class CloudChatRequest(BaseModel):
     chat_id: str
     content: str
-    model: str = "google/gemma-3-27b-it:free"
+    model: str = "openrouter:auto"
 
 
 # ── Gemini streaming ──────────────────────────────────────────────────────────
@@ -122,7 +220,9 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
             if resp.status_code != 200:
                 err_body = await resp.aread()
                 if resp.status_code == 429:
-                    yield None, "This model is currently busy (rate-limited). Try a different model or wait a moment."
+                    yield None, "rate_limited"
+                elif resp.status_code == 402:
+                    yield None, "quota_exceeded"
                 elif resp.status_code == 401:
                     yield None, "Invalid OpenRouter API key. Please check your key in the model picker."
                 else:
@@ -140,6 +240,14 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
                     return
                 try:
                     chunk = json.loads(data)
+                    # OpenRouter may embed errors in the stream
+                    if "error" in chunk:
+                        code = chunk["error"].get("code", 0)
+                        if code in (429, 402):
+                            yield None, "rate_limited"
+                        else:
+                            yield None, chunk["error"].get("message", "Unknown error")
+                        return
                     text = chunk["choices"][0]["delta"].get("content", "")
                     if text:
                         yield text, None
@@ -176,7 +284,6 @@ async def cloud_chat(
         .first()
     )
     if not chat:
-        # Chat may have been created optimistically on the client — create it now
         chat = models.Chat(
             id=body.chat_id,
             user_id=user_id,
@@ -196,14 +303,14 @@ async def cloud_chat(
     async def generate():
         full_text = ""
 
-        # ── Gemini (direct, no fallback needed) ──────────────────────────
+        # ── Gemini ───────────────────────────────────────────────────────────
         if is_gemini:
             api_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
             if not api_key:
                 yield f"data: {json.dumps({'error': 'Gemini API key required. Add your key in the model picker.'})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
-            yield _status(f"Using Gemini…")
+            yield _status("Using Gemini…")
             try:
                 async for token, error in _stream_gemini(body.model, history, body.content, api_key):
                     if error:
@@ -217,7 +324,7 @@ async def cloud_chat(
                 yield "data: [DONE]\n\n"
                 return
 
-        # ── OpenRouter with automatic fallback chain ──────────────────────
+        # ── OpenRouter ───────────────────────────────────────────────────────
         else:
             api_key = body.openrouter_key or os.environ.get("OPENROUTER_API_KEY", "")
             if not api_key:
@@ -225,47 +332,72 @@ async def cloud_chat(
                 yield "data: [DONE]\n\n"
                 return
 
-            # Auto mode: try full chain. Specific model: try only that one.
             if use_auto:
-                chain = OPENROUTER_FALLBACK_CHAIN
+                # Fetch ranked list (cached) and walk through all of them
+                chain = await _fetch_or_free_models(api_key)
             else:
-                requested_label = next((label for mid, label in OPENROUTER_FALLBACK_CHAIN if mid == body.model), body.model)
-                chain = [(body.model, requested_label)]
+                # Specific model requested — single attempt
+                short_name = body.model.split("/")[-1].replace(":free", "")
+                chain = [(body.model, short_name)]
 
             succeeded = False
+            skipped = 0
             for model_id, model_label in chain:
                 if use_auto:
                     yield _status(f"Trying {model_label}…")
+
                 got_token = False
                 failed = False
+                skip_reason: str | None = None
 
                 try:
                     async for token, error in _stream_openrouter(model_id, history, body.content, api_key):
                         if error:
                             failed = True
+                            if error in ("rate_limited", "quota_exceeded"):
+                                skip_reason = "limit reached"
+                            else:
+                                skip_reason = error  # fatal error, surface to user
                             break
                         if not got_token:
-                            # First real token — clear status
-                            yield _status("")
+                            yield _status("")   # clear "Trying…" status
                             got_token = True
                         full_text += token
                         yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
                 except Exception:
                     failed = True
+                    skip_reason = "unavailable"
 
                 if not failed:
                     succeeded = True
                     break
 
+                # Decide whether to continue or abort
                 if use_auto:
-                    yield _status(f"{model_label} unavailable — trying next…")
+                    if skip_reason in ("rate_limited", "quota_exceeded", "unavailable", None):
+                        # Transient — try next
+                        skipped += 1
+                        if skipped <= 3:
+                            yield _status(f"{model_label} at limit — trying next…")
+                        continue
+                    else:
+                        # Fatal error (bad key, etc.) — stop immediately
+                        yield f"data: {json.dumps({'error': skip_reason})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
                 else:
-                    yield f"data: {json.dumps({'error': f'{model_label} is currently unavailable. Try \"Best available\" or pick a different model.'})}\n\n"
+                    # Specific model failed
+                    short = body.model.split("/")[-1].replace(":free", "")
+                    if skip_reason in ("rate_limited", "quota_exceeded"):
+                        msg = f"{short} has reached its rate limit. Try «Best available» to auto-select a working model."
+                    else:
+                        msg = skip_reason or f"{short} is currently unavailable."
+                    yield f"data: {json.dumps({'error': msg})}\n\n"
                     yield "data: [DONE]\n\n"
                     return
 
             if not succeeded:
-                yield f"data: {json.dumps({'error': 'All models are currently unavailable. Please try again in a moment.', 'suggest_local': True})}\n\n"
+                yield f"data: {json.dumps({'error': 'All free models are currently at their rate limits. Please try again in a few minutes.', 'suggest_local': True})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
