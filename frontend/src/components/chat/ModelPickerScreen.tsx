@@ -59,6 +59,9 @@ export function ModelPickerScreen({ chatId }: Props) {
 
   if (modelReady) return null;
 
+  const bestAvailable = CLOUD_MODELS.find((m) => m.id === "cloud:openrouter:auto");
+  const hasAnyCloudKey = !!openRouterKey || !!geminiKey;
+
   const isNoWebGPU  = cap.ready && !cap.hasWebGPU;
   const ollamaList  = ollamaResult !== "loading" && ollamaResult.status === "ok" ? ollamaResult.models : [];
   const allDefs     = [CHROME_AI_MODEL, ...CLOUD_MODELS, ...TRANSFORMERS_MODELS, ...AVAILABLE_MODELS];
@@ -159,13 +162,13 @@ export function ModelPickerScreen({ chatId }: Props) {
               )}
 
               {/* Best Available auto-select */}
-              {!!openRouterKey && (
+              {!!bestAvailable && (
                 <ModelRow
-                  m={CLOUD_MODELS[0]}
-                  selected={selectedModel === CLOUD_MODELS[0].id}
-                  disabled={loading}
-                  onSelect={() => setModelForChat(chatId, CLOUD_MODELS[0].id)}
-                  badge={<Pill accent>auto</Pill>}
+                  m={bestAvailable}
+                  selected={selectedModel === bestAvailable.id}
+                  disabled={loading || !hasAnyCloudKey}
+                  onSelect={() => setModelForChat(chatId, bestAvailable.id)}
+                  badge={hasAnyCloudKey ? <Pill accent>auto</Pill> : <Pill blue>add a key</Pill>}
                 />
               )}
 

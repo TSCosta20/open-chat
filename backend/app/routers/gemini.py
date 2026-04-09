@@ -61,6 +61,18 @@ MODEL_QUALITY: dict[str, int] = {
     "qwen/qwen3-0.6b:free":                         15,
 }
 
+# Gemini models shown in the UI Cloud tab. Best available ("openrouter:auto")
+# tries these too, so it attempts every model a user can pick in Cloud.
+AUTO_GEMINI_MODELS: list[tuple[str, str]] = [
+    ("gemini-2.0-flash", "Gemini 2.0 Flash"),
+]
+
+# Cross-provider quality scores for Best available. Higher = try earlier.
+# Models not listed default to 0.
+AUTO_MODEL_QUALITY: dict[str, int] = {
+    "gemini-2.0-flash": 66,
+}
+
 # ── In-memory cache of free models from OpenRouter API ────────────────────────
 
 _or_cache: list[tuple[str, str]] = []   # [(model_id, display_name), ...]
@@ -243,8 +255,10 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
                     # OpenRouter may embed errors in the stream
                     if "error" in chunk:
                         code = chunk["error"].get("code", 0)
-                        if code in (429, 402):
+                        if code == 429:
                             yield None, "rate_limited"
+                        elif code == 402:
+                            yield None, "quota_exceeded"
                         else:
                             yield None, chunk["error"].get("message", "Unknown error")
                         return
@@ -303,8 +317,104 @@ async def cloud_chat(
     async def generate():
         full_text = ""
 
+        # Best available (openrouter:auto) â€” try every model shown in Cloud tab, by quality.
+        if use_auto:
+            openrouter_key = body.openrouter_key or os.environ.get("OPENROUTER_API_KEY", "")
+            gemini_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
+
+            if not openrouter_key and not gemini_key:
+                yield f"data: {json.dumps({'error': 'A cloud API key is required. Add an OpenRouter key or a Gemini key in the model picker.'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # (provider, model_id, label, score, rank)
+            candidates: list[tuple[str, str, str, int, int]] = []
+
+            if openrouter_key:
+                or_chain = await _fetch_or_free_models(openrouter_key)
+                for idx, (mid, label) in enumerate(or_chain):
+                    candidates.append(("openrouter", mid, label, MODEL_QUALITY.get(mid, 0), idx))
+
+            if gemini_key:
+                for idx, (mid, label) in enumerate(AUTO_GEMINI_MODELS):
+                    candidates.append(("gemini", mid, label, AUTO_MODEL_QUALITY.get(mid, 0), 1_000_000 + idx))
+
+            candidates.sort(key=lambda c: (-c[3], c[4]))
+
+            last_error: str | None = None
+            attempted = 0
+
+            for provider, model_id, model_label, _, _ in candidates:
+                attempted += 1
+                yield _status(f"Trying {model_label}...")
+
+                got_token = False
+                error_text: str | None = None
+
+                try:
+                    if provider == "gemini":
+                        async for token, error in _stream_gemini(model_id, history, body.content, gemini_key):
+                            if error:
+                                error_text = error
+                                break
+                            if not got_token:
+                                yield _status("")
+                                got_token = True
+                            full_text += token
+                            yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                    else:
+                        async for token, error in _stream_openrouter(model_id, history, body.content, openrouter_key):
+                            if error:
+                                error_text = error
+                                break
+                            if not got_token:
+                                yield _status("")
+                                got_token = True
+                            full_text += token
+                            yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                except Exception:
+                    error_text = "unavailable"
+
+                if error_text and got_token:
+                    # Avoid mixing outputs from multiple models.
+                    yield f"data: {json.dumps({'error': error_text})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
+                if not error_text:
+                    # Success
+                    break
+
+                last_error = error_text
+
+                retryable = False
+                if provider == "openrouter":
+                    retryable = (
+                        error_text in ("rate_limited", "quota_exceeded", "unavailable")
+                        or error_text.startswith("OpenRouter error:")
+                        or error_text.startswith("Invalid OpenRouter API key")
+                    )
+                else:
+                    low = error_text.lower()
+                    retryable = (
+                        ("rate limit" in low)
+                        or ("gemini error:" in low)
+                        or ("invalid gemini api key" in low)
+                        or (error_text == "unavailable")
+                    )
+
+                if retryable and attempted <= 4:
+                    yield _status(f"{model_label} unavailable - trying next...")
+                continue
+
+            if not full_text:
+                msg = last_error or "No cloud models are available right now. Please try again."
+                yield f"data: {json.dumps({'error': msg, 'suggest_local': True})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
         # ── Gemini ───────────────────────────────────────────────────────────
-        if is_gemini:
+        elif is_gemini:
             api_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
             if not api_key:
                 yield f"data: {json.dumps({'error': 'Gemini API key required. Add your key in the model picker.'})}\n\n"
@@ -354,10 +464,7 @@ async def cloud_chat(
                     async for token, error in _stream_openrouter(model_id, history, body.content, api_key):
                         if error:
                             failed = True
-                            if error in ("rate_limited", "quota_exceeded"):
-                                skip_reason = "limit reached"
-                            else:
-                                skip_reason = error  # fatal error, surface to user
+                            skip_reason = error
                             break
                         if not got_token:
                             yield _status("")   # clear "Trying…" status
