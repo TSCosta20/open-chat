@@ -188,7 +188,7 @@ function SuggestLocalBubble({ chatId, messageId, reason }: { chatId: string; mes
     if (!lastUserContent || isStreaming) return;
     if (dismiss) removeMessage(chatId, messageId);
     setPickerLocalOnly(false);
-    setModelForChat(chatId, "cloud:openrouter:auto");
+    setModelForChat(chatId, "cloud:auto");
     setModelReady(true);
     await sendMessage(lastUserContent, false, { suppressUserEcho: true });
   }

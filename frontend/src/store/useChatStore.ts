@@ -6,7 +6,10 @@ const LAST_MODEL_KEY = "oc_last_model";
 
 function readLastModel(): ModelId {
   if (typeof window === "undefined") return DEFAULT_MODEL;
-  return localStorage.getItem(LAST_MODEL_KEY) ?? DEFAULT_MODEL;
+  const raw = localStorage.getItem(LAST_MODEL_KEY) ?? DEFAULT_MODEL;
+  // Back-compat: older builds stored Best available as "cloud:openrouter:auto"
+  if (raw === "cloud:openrouter:auto") return "cloud:auto";
+  return raw;
 }
 
 /** Returns true only if the user has ever explicitly chosen a model. */
@@ -16,7 +19,9 @@ export function hasStoredModel(): boolean {
 }
 
 function saveLastModel(model: ModelId) {
-  if (typeof window !== "undefined") localStorage.setItem(LAST_MODEL_KEY, model);
+  if (typeof window === "undefined") return;
+  const next = model === "cloud:openrouter:auto" ? "cloud:auto" : model;
+  localStorage.setItem(LAST_MODEL_KEY, next);
 }
 
 interface ChatStore {
@@ -172,8 +177,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setPickerLocalOnly: (val) => set({ pickerLocalOnly: val }),
 
   setModelForChat: (chatId, model) => {
-    saveLastModel(model);
-    set((s) => ({ selectedModel: { ...s.selectedModel, [chatId]: model } }));
+    const next = model === "cloud:openrouter:auto" ? "cloud:auto" : model;
+    saveLastModel(next);
+    set((s) => ({ selectedModel: { ...s.selectedModel, [chatId]: next } }));
   },
 
   getModelForChat: (chatId) => get().selectedModel[chatId] ?? readLastModel(),

@@ -21,12 +21,19 @@ export function InputBar({ chatId, centered = false }: Props) {
   const isStreaming = useChatStore((s) => s.isStreaming[chatId] ?? false);
   const modelReady = useChatStore((s) => s.modelReady);
   const selectedModel = useChatStore((s) => s.getModelForChat(chatId));
+  const cloudInUse = useChatStore((s) => s.cloudModelInUse[chatId] ?? null);
   const { sendMessage } = useChat(chatId);
 
   const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
   const disclaimer =
     modelDef?.backend === "cloud"
-      ? `Responses processed by ${modelDef.cloudModelId?.startsWith("gemini-") ? "Google Gemini" : "OpenRouter"}`
+      ? cloudInUse?.label
+        ? `Cloud • using ${cloudInUse.label}`
+        : modelDef.cloudModelId?.startsWith("gemini-")
+        ? "Responses processed by Google Gemini"
+        : modelDef.cloudModelId === "auto"
+        ? "Cloud • best available"
+        : "Responses processed by cloud inference"
       : modelDef?.backend === "chrome-ai"
       ? "Runs in Chrome's built-in AI — no data leaves your device"
       : "Runs entirely on your device · no data leaves your browser";

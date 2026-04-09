@@ -85,7 +85,17 @@ export function useChat(chatId: string) {
         } else if (modelDef?.backend === "chrome-ai") {
           finalContent = await generateChromeAI(llmMessages, onToken);
         } else if (cloudModelId) {
-          const { openRouterKey, geminiKey } = getStoredApiKeys();
+          const {
+            openRouterKey,
+            geminiKey,
+            groqKey,
+            togetherKey,
+            fireworksKey,
+            huggingFaceKey,
+            puterKey,
+            routerKey,
+            routerBaseUrl,
+          } = getStoredApiKeys();
           store.setCloudModelInUse(chatId, null);
           store.setCloudUsage(chatId, null);
           finalContent = await streamCloud(
@@ -99,6 +109,13 @@ export function useChat(chatId: string) {
             (u) => store.setCloudUsage(chatId, u),
             openRouterKey,
             geminiKey,
+            groqKey,
+            togetherKey,
+            fireworksKey,
+            huggingFaceKey,
+            puterKey,
+            routerKey,
+            routerBaseUrl,
           );
           cloudHandledPersist = true;
         } else {
@@ -159,7 +176,7 @@ export function useChat(chatId: string) {
             cloudModelId
               ? resolvedCloud
                 ? { label: resolvedCloud.label, provider: resolvedCloud.provider, id: resolvedCloud.id }
-                : { label: cloudModelId === "openrouter:auto" ? "Best available" : cloudModelId, provider: "cloud", id: cloudModelId }
+                : { label: (cloudModelId === "openrouter:auto" || cloudModelId === "auto") ? "Best available" : cloudModelId, provider: "cloud", id: cloudModelId }
               : selectedModel.startsWith("ollama:")
               ? { label: selectedModel.slice(7), provider: "ollama", id: selectedModel.slice(7) }
               : modelDef
@@ -205,7 +222,7 @@ export function useChat(chatId: string) {
 
           if (!hasLighter) {
             // No lighter local model — silently switch to cloud
-            store.setModelForChat(chatId, "cloud:openrouter:auto");
+            store.setModelForChat(chatId, "cloud:auto");
             store.setModelReady(true);
             store.appendMessage(chatId, {
               id: crypto.randomUUID(),
@@ -259,6 +276,13 @@ async function streamCloud(
   onUsage: (u: { requests?: any; tokens?: any } | null) => void,
   openRouterKey = "",
   geminiKey = "",
+  groqKey = "",
+  togetherKey = "",
+  fireworksKey = "",
+  huggingFaceKey = "",
+  puterKey = "",
+  routerKey = "",
+  routerBaseUrl = "",
 ): Promise<string> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   const res = await fetch(`${API_URL}/chat/cloud`, {
@@ -273,6 +297,13 @@ async function streamCloud(
       model: cloudModelId,
       openrouter_key: openRouterKey,
       gemini_key: geminiKey,
+      groq_key: groqKey,
+      together_key: togetherKey,
+      fireworks_key: fireworksKey,
+      huggingface_key: huggingFaceKey,
+      puter_key: puterKey,
+      router_key: routerKey,
+      router_base_url: routerBaseUrl,
     }),
   });
 

@@ -12,6 +12,7 @@ import { checkChromeAI, type ChromeAIStatus } from "@/hooks/useChromeAI";
 import { checkOllama, type OllamaModelInfo, type OllamaCheckResult } from "@/hooks/useOllama";
 import { getSuggestionsForDevice } from "@/lib/ollamaSuggestions";
 import { useOpenRouterModels } from "@/hooks/useOpenRouterModels";
+import { useCloudProviderModels } from "@/hooks/useCloudProviderModels";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import Link from "next/link";
 import { updateChatModel } from "@/lib/api";
@@ -47,20 +48,67 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [tab, setTab]                   = useState<Tab>(pickerLocalOnly ? "transformers" : "cloud");
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
   const [ollamaResult, setOllamaResult] = useState<OllamaCheckResult | "loading">("loading");
-  const { openRouterKey, geminiKey, saveOpenRouterKey, saveGeminiKey } = useApiKeys();
+  const {
+    openRouterKey,
+    geminiKey,
+    groqKey,
+    togetherKey,
+    fireworksKey,
+    huggingFaceKey,
+    puterKey,
+    routerKey,
+    routerBaseUrl,
+    saveOpenRouterKey,
+    saveGeminiKey,
+    saveGroqKey,
+    saveTogetherKey,
+    saveFireworksKey,
+    saveHuggingFaceKey,
+    savePuterKey,
+    saveRouterKey,
+    saveRouterBaseUrl,
+  } = useApiKeys();
   const { models: orModels, loading: orLoading, error: orError } = useOpenRouterModels();
   const [orDraft, setOrDraft]           = useState("");
   const [geminiDraft, setGeminiDraft]   = useState("");
+  const [groqDraft, setGroqDraft]       = useState("");
+  const [togetherDraft, setTogetherDraft] = useState("");
+  const [fireworksDraft, setFireworksDraft] = useState("");
+  const [hfDraft, setHfDraft]           = useState("");
+  const [puterDraft, setPuterDraft]     = useState("");
+  const [routerKeyDraft, setRouterKeyDraft] = useState("");
+  const [routerUrlDraft, setRouterUrlDraft] = useState("");
   const [orSaved, setOrSaved]           = useState(false);
   const [geminiSaved, setGeminiSaved]   = useState(false);
+  const [groqSaved, setGroqSaved]       = useState(false);
+  const [togetherSaved, setTogetherSaved] = useState(false);
+  const [fireworksSaved, setFireworksSaved] = useState(false);
+  const [hfSaved, setHfSaved]           = useState(false);
+  const [puterSaved, setPuterSaved]     = useState(false);
+  const [routerSaved, setRouterSaved]   = useState(false);
+
+  const { models: puterModels, loading: puterLoading, error: puterError } = useCloudProviderModels({ provider: "puter", apiKey: puterKey });
+  const { models: hfModels, loading: hfLoading, error: hfError } = useCloudProviderModels({ provider: "huggingface", apiKey: huggingFaceKey });
+  const { models: groqModels, loading: groqLoading, error: groqError } = useCloudProviderModels({ provider: "groq", apiKey: groqKey });
+  const { models: togetherModels, loading: togetherLoading, error: togetherError } = useCloudProviderModels({ provider: "together", apiKey: togetherKey });
+  const { models: fireworksModels, loading: fireworksLoading, error: fireworksError } = useCloudProviderModels({ provider: "fireworks", apiKey: fireworksKey });
+  const { models: routerModels, loading: routerLoading, error: routerError } = useCloudProviderModels({ provider: "router", apiKey: routerKey, baseUrl: routerBaseUrl });
 
   useEffect(() => { checkChromeAI().then(setChromeStatus); }, []);
   useEffect(() => { checkOllama().then(setOllamaResult); }, []);
 
   if (modelReady) return null;
 
-  const bestAvailable = CLOUD_MODELS.find((m) => m.id === "cloud:openrouter:auto");
-  const hasAnyCloudKey = !!openRouterKey || !!geminiKey;
+  const bestAvailable = CLOUD_MODELS.find((m) => m.id === "cloud:auto");
+  const hasAnyCloudKey =
+    !!openRouterKey ||
+    !!geminiKey ||
+    !!groqKey ||
+    !!togetherKey ||
+    !!fireworksKey ||
+    !!huggingFaceKey ||
+    !!puterKey ||
+    !!routerKey;
 
   const isNoWebGPU  = cap.ready && !cap.hasWebGPU;
   const ollamaList  = ollamaResult !== "loading" && ollamaResult.status === "ok" ? ollamaResult.models : [];
@@ -97,8 +145,28 @@ export function ModelPickerScreen({ chatId }: Props) {
   function loadLabel() {
     if (isOllamaSelected) return `Use ${selectedModel.slice(7)}`;
     if (isDynamicCloudSelected) {
-      const orDef = orModels.find((m) => `cloud:${m.id}` === selectedModel);
-      return orDef ? `Use ${orDef.name}` : "Use selected model";
+      const raw = selectedModel.slice(6);
+      const orDef = orModels.find((m) => m.id === raw);
+      if (orDef) return `Use ${orDef.name}`;
+
+      const colon = raw.indexOf(":");
+      if (colon > 0) {
+        const provider = raw.slice(0, colon);
+        const id = raw.slice(colon + 1);
+        const byProvider: Record<string, Array<{ id: string; name: string }>> = {
+          puter: puterModels,
+          huggingface: hfModels,
+          groq: groqModels,
+          together: togetherModels,
+          fireworks: fireworksModels,
+          router: routerModels,
+        };
+        const list = byProvider[provider];
+        const found = list?.find((m) => m.id === id);
+        if (found) return `Use ${found.name}`;
+      }
+
+      return "Use selected model";
     }
     if (!selectedDef) return "Select a model above";
     if (selectedDef.backend === "chrome-ai" || selectedDef.backend === "cloud")
@@ -252,11 +320,11 @@ export function ModelPickerScreen({ chatId }: Props) {
                         <button
                           key={m.id}
                           onClick={() => setModelForChat(chatId, modelId)}
-                          disabled={loading}
+                          disabled={loading || !openRouterKey}
                           className={clsx(
                             "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
                             selectedModel === modelId ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
-                            loading && "cursor-not-allowed opacity-50"
+                            (loading || !openRouterKey) && "cursor-not-allowed opacity-50"
                           )}
                         >
                           <span className={clsx(
@@ -278,6 +346,85 @@ export function ModelPickerScreen({ chatId }: Props) {
                   </div>
                 ));
               })()}
+
+              {/* OpenAI-compatible providers */}
+              {renderCompatProviderSection({
+                title: "Puter",
+                provider: "puter",
+                selectedModelId: selectedModel,
+                uiDisabled: loading,
+                models: puterModels,
+                loading: puterLoading,
+                error: puterError,
+                hasKey: !!puterKey,
+                noteWhenNoKey: "— auth token required",
+                onSelect: (id) => setModelForChat(chatId, `cloud:puter:${id}`),
+              })}
+
+              {renderCompatProviderSection({
+                title: "Hugging Face Inference API",
+                provider: "huggingface",
+                selectedModelId: selectedModel,
+                uiDisabled: loading,
+                models: hfModels,
+                loading: hfLoading,
+                error: hfError,
+                hasKey: !!huggingFaceKey,
+                noteWhenNoKey: "— token required",
+                onSelect: (id) => setModelForChat(chatId, `cloud:huggingface:${id}`),
+              })}
+
+              {renderCompatProviderSection({
+                title: "Groq",
+                provider: "groq",
+                selectedModelId: selectedModel,
+                uiDisabled: loading,
+                models: groqModels,
+                loading: groqLoading,
+                error: groqError,
+                hasKey: !!groqKey,
+                noteWhenNoKey: "— key required",
+                onSelect: (id) => setModelForChat(chatId, `cloud:groq:${id}`),
+              })}
+
+              {renderCompatProviderSection({
+                title: "Together AI",
+                provider: "together",
+                selectedModelId: selectedModel,
+                uiDisabled: loading,
+                models: togetherModels,
+                loading: togetherLoading,
+                error: togetherError,
+                hasKey: !!togetherKey,
+                noteWhenNoKey: "— key required",
+                onSelect: (id) => setModelForChat(chatId, `cloud:together:${id}`),
+              })}
+
+              {renderCompatProviderSection({
+                title: "Fireworks AI",
+                provider: "fireworks",
+                selectedModelId: selectedModel,
+                uiDisabled: loading,
+                models: fireworksModels,
+                loading: fireworksLoading,
+                error: fireworksError,
+                hasKey: !!fireworksKey,
+                noteWhenNoKey: "— key required",
+                onSelect: (id) => setModelForChat(chatId, `cloud:fireworks:${id}`),
+              })}
+
+              {renderCompatProviderSection({
+                title: "Multi-model router",
+                provider: "router",
+                selectedModelId: selectedModel,
+                uiDisabled: loading,
+                models: routerModels,
+                loading: routerLoading,
+                error: routerError,
+                hasKey: !!routerKey && !!routerBaseUrl,
+                noteWhenNoKey: "— base URL + key required",
+                onSelect: (id) => setModelForChat(chatId, `cloud:router:${id}`),
+              })}
             </>}
 
             {/* ── Transformers.js ────────────────────────────────── */}
@@ -535,6 +682,224 @@ export function ModelPickerScreen({ chatId }: Props) {
               </div>
             </div>
 
+            {/* Puter */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Puter auth token</p>
+                {puterKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                OpenAI-compatible endpoint via your Puter account token.{" "}
+                <a
+                  href="https://puter.com/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:text-accent-hover"
+                >
+                  puter.com/dashboard
+                </a>{" "}
+                â†’ Copy auth token.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={puterKey ? "pt-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "Paste token..."}
+                  value={puterDraft}
+                  onChange={(e) => { setPuterDraft(e.target.value); setPuterSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => { savePuterKey(puterDraft); setPuterDraft(""); setPuterSaved(true); }}
+                  disabled={!puterDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {puterSaved ? "Saved âœ“" : "Save"}
+                </button>
+              </div>
+            </div>
+
+            {/* Hugging Face */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Hugging Face token</p>
+                {huggingFaceKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Uses Hugging Face's OpenAI-compatible router endpoint.{" "}
+                <a
+                  href="https://huggingface.co/settings/tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:text-accent-hover"
+                >
+                  huggingface.co/settings/tokens
+                </a>
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={huggingFaceKey ? "hf_â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "hf_..."}
+                  value={hfDraft}
+                  onChange={(e) => { setHfDraft(e.target.value); setHfSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => { saveHuggingFaceKey(hfDraft); setHfDraft(""); setHfSaved(true); }}
+                  disabled={!hfDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {hfSaved ? "Saved âœ“" : "Save"}
+                </button>
+              </div>
+            </div>
+
+            {/* Groq */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Groq key</p>
+                {groqKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                OpenAI-compatible API.{" "}
+                <a
+                  href="https://console.groq.com/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:text-accent-hover"
+                >
+                  console.groq.com/keys
+                </a>
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={groqKey ? "gsk_â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "gsk_..."}
+                  value={groqDraft}
+                  onChange={(e) => { setGroqDraft(e.target.value); setGroqSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => { saveGroqKey(groqDraft); setGroqDraft(""); setGroqSaved(true); }}
+                  disabled={!groqDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {groqSaved ? "Saved âœ“" : "Save"}
+                </button>
+              </div>
+            </div>
+
+            {/* Together */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Together key</p>
+                {togetherKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                OpenAI-compatible API.{" "}
+                <a
+                  href="https://api.together.xyz/settings/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:text-accent-hover"
+                >
+                  api.together.xyz/settings/api-keys
+                </a>
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={togetherKey ? "together-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "Paste key..."}
+                  value={togetherDraft}
+                  onChange={(e) => { setTogetherDraft(e.target.value); setTogetherSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => { saveTogetherKey(togetherDraft); setTogetherDraft(""); setTogetherSaved(true); }}
+                  disabled={!togetherDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {togetherSaved ? "Saved âœ“" : "Save"}
+                </button>
+              </div>
+            </div>
+
+            {/* Fireworks */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Fireworks key</p>
+                {fireworksKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                OpenAI-compatible API.{" "}
+                <a
+                  href="https://app.fireworks.ai/settings/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:text-accent-hover"
+                >
+                  app.fireworks.ai/settings/api-keys
+                </a>
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={fireworksKey ? "fw-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "Paste key..."}
+                  value={fireworksDraft}
+                  onChange={(e) => { setFireworksDraft(e.target.value); setFireworksSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => { saveFireworksKey(fireworksDraft); setFireworksDraft(""); setFireworksSaved(true); }}
+                  disabled={!fireworksDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {fireworksSaved ? "Saved âœ“" : "Save"}
+                </button>
+              </div>
+            </div>
+
+            {/* Router (custom OpenAI-compatible) */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Multi-model router</p>
+                {routerKey && routerBaseUrl ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Use any OpenAI-compatible endpoint (ShareAI-style routers, LiteLLM, etc.).
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder={routerBaseUrl ? routerBaseUrl : "Base URL (e.g. https://example.com/v1)"}
+                  value={routerUrlDraft}
+                  onChange={(e) => { setRouterUrlDraft(e.target.value); setRouterSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={routerKey ? "sk-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "API key"}
+                  value={routerKeyDraft}
+                  onChange={(e) => { setRouterKeyDraft(e.target.value); setRouterSaved(false); }}
+                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => {
+                    if (routerUrlDraft.trim()) saveRouterBaseUrl(routerUrlDraft);
+                    if (routerKeyDraft.trim()) saveRouterKey(routerKeyDraft);
+                    setRouterUrlDraft("");
+                    setRouterKeyDraft("");
+                    setRouterSaved(true);
+                  }}
+                  disabled={!routerUrlDraft.trim() && !routerKeyDraft.trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  {routerSaved ? "Saved âœ“" : "Save"}
+                </button>
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -706,6 +1071,88 @@ function NoWebGPU() {
     <div className="px-4 py-4 text-sm text-amber-300">
       WebGPU not available — use Chrome 113+ or Edge.
     </div>
+  );
+}
+
+function renderCompatProviderSection(opts: {
+  title: string;
+  provider: string;
+  selectedModelId: string;
+  uiDisabled: boolean;
+  models: Array<{ id: string; name: string; quality?: number }>;
+  loading: boolean;
+  error: boolean;
+  hasKey: boolean;
+  noteWhenNoKey: string;
+  onSelect: (id: string) => void;
+}) {
+  const provider = opts.provider.toLowerCase();
+
+  return (
+    <>
+      <div className="px-4 py-2 bg-black/20 flex items-center gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+          {opts.title}
+        </p>
+        {!opts.hasKey && (
+          <span className="text-[10px] text-yellow-500">{opts.noteWhenNoKey}</span>
+        )}
+      </div>
+
+      {!opts.hasKey ? (
+        <div className="px-4 py-3 text-xs text-slate-500">
+          Add a key in the Cloud section below to load models.
+        </div>
+      ) : opts.loading ? (
+        <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400">
+          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          Loading modelsâ€¦
+        </div>
+      ) : opts.error ? (
+        <div className="px-4 py-3 text-xs text-slate-500">
+          Could not load model list â€” check your key and connection.
+        </div>
+      ) : opts.models.length === 0 ? (
+        <div className="px-4 py-3 text-xs text-slate-500">No models found.</div>
+      ) : (
+        [...opts.models]
+          .sort((a, b) => {
+            const qa = a.quality ?? 0;
+            const qb = b.quality ?? 0;
+            if (qa !== qb) return qb - qa;
+            return (a.name ?? a.id).localeCompare(b.name ?? b.id);
+          })
+          .map((m) => {
+            const modelId = `cloud:${provider}:${m.id}`;
+            const isSelected = opts.selectedModelId === modelId;
+            return (
+              <button
+                key={m.id}
+                onClick={() => opts.onSelect(m.id)}
+                disabled={opts.uiDisabled}
+                className={clsx(
+                  "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                  isSelected ? "bg-accent/15" : "bg-surface-secondary hover:bg-white/5",
+                  opts.uiDisabled && "cursor-not-allowed opacity-50"
+                )}
+              >
+                <span className={clsx(
+                  "h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center",
+                  isSelected ? "border-accent" : "border-slate-600"
+                )}>
+                  {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                </span>
+                <span className="flex-1 flex items-center gap-2 min-w-0 flex-wrap">
+                  <span className="text-sm text-slate-200 font-medium truncate">{m.name ?? m.id}</span>
+                </span>
+              </button>
+            );
+          })
+      )}
+    </>
   );
 }
 

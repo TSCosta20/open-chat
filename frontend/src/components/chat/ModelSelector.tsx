@@ -10,16 +10,52 @@ interface Props {
 export function ModelSelector({ chatId }: Props) {
   const model = useChatStore((s) => s.getModelForChat(chatId));
   const setModelReady = useChatStore((s) => s.setModelReady);
+  const cloudInUse = useChatStore((s) => s.cloudModelInUse[chatId] ?? null);
+  const cloudUsage = useChatStore((s) => s.cloudUsage[chatId] ?? null);
   const modelDef = ALL_MODELS.find((m) => m.id === model);
   const isOllama = model.startsWith("ollama:");
 
   const name = isOllama ? model.slice(7) : (modelDef?.name ?? model);
   const isCloud = modelDef?.backend === "cloud" || modelDef?.backend === "chrome-ai";
 
+  function formatReset(reset: number | null | undefined): string {
+    if (!reset) return "";
+    const nowSec = Date.now() / 1000;
+    const tsSec = reset > 1_000_000_000 ? reset : nowSec + reset;
+    const inSec = Math.max(0, Math.round(tsSec - nowSec));
+    const when = new Date(tsSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (inSec < 120) return `resets in ~${inSec}s (${when})`;
+    const mins = Math.max(1, Math.round(inSec / 60));
+    return `resets in ~${mins}m (${when})`;
+  }
+
+  function usageLine(kind: "requests" | "tokens"): string {
+    const u = (cloudUsage as any)?.[kind];
+    if (!u) return "";
+    const limit = typeof u.limit === "number" ? u.limit : null;
+    const remaining = typeof u.remaining === "number" ? u.remaining : null;
+    const used = limit !== null && remaining !== null ? Math.max(0, limit - remaining) : null;
+    const reset = formatReset(typeof u.reset === "number" ? u.reset : null);
+    const parts = [
+      used !== null && limit !== null ? `${used}/${limit}` : limit !== null ? `limit ${limit}` : null,
+      remaining !== null ? `remaining ${remaining}` : null,
+      reset || null,
+    ].filter(Boolean);
+    return parts.length ? `${kind}: ${parts.join(" Â· ")}` : "";
+  }
+
+  const resolved = cloudInUse?.label ? `${cloudInUse.label}${cloudInUse.provider ? ` (${cloudInUse.provider})` : ""}` : "";
+  const titleLines = [
+    "Change model",
+    resolved ? `In use: ${resolved}` : null,
+    usageLine("requests") || null,
+    usageLine("tokens") || null,
+  ].filter(Boolean);
+
   return (
     <button
       onClick={() => setModelReady(false)}
-      title="Change model"
+      title={titleLines.join("\n")}
       className="flex items-center gap-1.5 self-start rounded-lg border border-surface-border bg-surface-secondary px-2.5 py-1 text-xs text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
     >
       {/* Cloud or device icon */}
@@ -34,6 +70,11 @@ export function ModelSelector({ chatId }: Props) {
       )}
 
       <span className="max-w-[180px] truncate">{name}</span>
+      {isCloud && cloudInUse?.label && (
+        <span className="max-w-[160px] truncate text-[10px] text-slate-500" title={`In use: ${cloudInUse.label}`}>
+          â†’ {cloudInUse.label}
+        </span>
+      )}
 
       {/* Swap icon */}
       <svg className="h-3 w-3 shrink-0 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

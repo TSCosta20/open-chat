@@ -24,6 +24,18 @@ _GEMINI_URL = (
 _OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
 _OPENROUTER_MODELS  = "https://openrouter.ai/api/v1/models"
 
+# OpenAI-compatible providers (model listing + chat completions)
+_OPENAI_COMPAT_BASE_URLS: dict[str, str] = {
+    # OpenAI-style endpoints
+    "groq": "https://api.groq.com/openai/v1",
+    "together": "https://api.together.xyz/v1",
+    "fireworks": "https://api.fireworks.ai/inference/v1",
+    # Hugging Face Inference API router (OpenAI-compatible)
+    "huggingface": "https://router.huggingface.co/v1",
+    # Puter exposes an OpenAI-compatible endpoint using a Puter auth token
+    "puter": "https://api.puter.com/puterai/openai/v1",
+}
+
 # ── Quality ranking ────────────────────────────────────────────────────────────
 # Higher score = try first. Models not listed default to score 0 (ranked by
 # context length among themselves). Update this as new standout models release.
@@ -79,10 +91,117 @@ _or_cache: list[dict] = []
 _or_cache_ts: float = 0.0
 _OR_CACHE_TTL = 600  # seconds — refresh every 10 min
 
+_compat_cache: dict[str, tuple[float, list[dict]]] = {}
+_COMPAT_CACHE_TTL = 600  # seconds
+
 
 def _parse_provider(model_id: str) -> str:
     return (model_id.split("/", 1)[0] or model_id) if "/" in model_id else model_id
 
+
+_SKIP_MODEL_PATTERNS = [
+    "embedding",
+    "embed",
+    "rerank",
+    "tts",
+    "whisper",
+    "speech",
+    "vision-embed",
+]
+
+
+def _should_skip_model_id(model_id: str) -> bool:
+    low = model_id.lower()
+    return any(p in low for p in _SKIP_MODEL_PATTERNS)
+
+
+def _quality_score(model_id: str) -> int:
+    """Cross-provider approximate quality score. Higher = try earlier."""
+    # Exact OpenRouter IDs (free tier) are scored by explicit mapping
+    if model_id in MODEL_QUALITY:
+        return MODEL_QUALITY[model_id]
+
+    low = model_id.lower()
+
+    # Canonical reasoning models
+    if "deepseek" in low and "r1" in low:
+        return 92
+    if "qwen" in low and ("235b" in low or "a22b" in low):
+        return 97
+    if "llama" in low and ("70b" in low or "72b" in low):
+        return 90
+    if "llama" in low and "405b" in low:
+        return 96
+    if "phi" in low and "reasoning" in low:
+        return 78
+
+    # Heuristic by parameter count when present
+    import re
+    m = re.search(r"(\d{1,3})(?:\.(\d))?b", low)
+    if m:
+        whole = int(m.group(1))
+        frac = int(m.group(2) or 0)
+        size = whole + (frac / 10.0)
+        if size >= 200:
+            return 95
+        if size >= 70:
+            return 90
+        if size >= 30:
+            return 82
+        if size >= 14:
+            return 72
+        if size >= 8:
+            return 66
+        if size >= 4:
+            return 52
+        if size >= 1:
+            return 30
+
+    return 0
+
+
+def _model_label(model_id: str) -> str:
+    # Keep it short; the UI can show raw IDs in tooltips.
+    return model_id
+
+
+async def _fetch_openai_compat_models(provider: str, api_key: str, base_url: str) -> list[dict]:
+    """Fetch and cache /models from an OpenAI-compatible provider."""
+    cache_key = f"{provider}|{base_url}"
+    cached = _compat_cache.get(cache_key)
+    now = time.time()
+    if cached and (now - cached[0]) < _COMPAT_CACHE_TTL:
+        return cached[1]
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    url = base_url.rstrip("/") + "/models"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail=f"{provider} model list failed ({resp.status_code})")
+            raw = resp.json().get("data", [])
+            items: list[dict] = []
+            for m in raw:
+                mid = m.get("id") or ""
+                if not mid or _should_skip_model_id(mid):
+                    continue
+                items.append({
+                    "id": mid,
+                    "name": _model_label(mid),
+                    "quality": _quality_score(mid),
+                    "provider": provider,
+                })
+            # Sort by quality desc, then ID, and cap to keep UI + auto manageable
+            items.sort(key=lambda x: (-int(x.get("quality") or 0), str(x.get("id") or "")))
+            items = items[:60]
+            _compat_cache[cache_key] = (now, items)
+            return items
+    except HTTPException:
+        raise
+    except Exception:
+        # If fetch fails, return cached data if any
+        return cached[1] if cached else []
 
 async def _fetch_or_free_models_detailed(api_key: str | None = None) -> list[dict]:
     """Return quality-ranked list of OpenRouter free models with metadata."""
@@ -151,6 +270,37 @@ async def list_openrouter_free_models():
     models = await _fetch_or_free_models_detailed()
     return {"data": models}
 
+
+class CloudModelListRequest(BaseModel):
+    provider: str
+    api_key: str = ""
+    base_url: str | None = None
+
+
+@router.post("/models/cloud/list")
+async def list_cloud_models(body: CloudModelListRequest):
+    """Return models for a given cloud provider (used by the model picker UI)."""
+    provider = (body.provider or "").strip().lower()
+
+    if provider == "gemini":
+        data = [
+            {"id": mid, "name": label, "quality": AUTO_MODEL_QUALITY.get(mid, 0), "provider": "gemini"}
+            for mid, label in AUTO_GEMINI_MODELS
+        ]
+        data.sort(key=lambda x: (-int(x.get("quality") or 0), str(x.get("id") or "")))
+        return {"data": data}
+
+    if provider == "openrouter":
+        models = await _fetch_or_free_models_detailed()
+        return {"data": models}
+
+    base_url = body.base_url or _OPENAI_COMPAT_BASE_URLS.get(provider, "")
+    if not base_url:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+
+    models = await _fetch_openai_compat_models(provider, body.api_key, base_url)
+    return {"data": models, "base_url": base_url}
+
 GEMINI_MODELS = {
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
@@ -162,13 +312,16 @@ GEMINI_MODELS = {
 
 
 def _is_allowed(model: str) -> bool:
-    """Accept Gemini models, openrouter:auto, and any OpenRouter free-tier model."""
+    """Accept supported cloud model selectors."""
     if model in GEMINI_MODELS:
         return True
-    if model == "openrouter:auto":
+    if model in ("openrouter:auto", "auto"):
         return True
     if model.endswith(":free") and "/" in model:
         return True
+    for prefix in ("groq:", "together:", "fireworks:", "huggingface:", "puter:", "router:"):
+        if model.startswith(prefix) and len(model) > len(prefix):
+            return True
     return False
 
 
@@ -317,9 +470,68 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
+async def _stream_openai_compat(provider: str, base_url: str, model: str, history: list, new_content: str, api_key: str):
+    """Yields (token, error, meta) tuples from an OpenAI-compatible SSE stream."""
+    messages = [{"role": m.role, "content": m.content} for m in history]
+    messages.append({"role": "user", "content": new_content})
+
+    url = base_url.rstrip("/") + "/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body = {"model": model, "messages": messages, "stream": True}
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        async with client.stream("POST", url, json=body, headers=headers) as resp:
+            meta = _parse_openrouter_ratelimits(resp.headers)
+            if meta:
+                yield None, None, meta
+
+            if resp.status_code != 200:
+                err_body = await resp.aread()
+                if resp.status_code == 429:
+                    yield None, "rate_limited", None
+                elif resp.status_code == 402:
+                    yield None, "quota_exceeded", None
+                elif resp.status_code in (401, 403):
+                    yield None, f"Invalid {provider} API key. Please check your key in the model picker.", None
+                else:
+                    try:
+                        detail = json.loads(err_body).get("error", {}).get("message", err_body.decode()[:160])
+                    except Exception:
+                        detail = err_body.decode()[:160]
+                    yield None, f"{provider} error: {detail}", None
+                return
+
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    chunk = json.loads(data)
+                    if "error" in chunk:
+                        yield None, chunk.get("error", {}).get("message", "Unknown error"), None
+                        return
+                    text = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                    if text:
+                        yield text, None, None
+                except (KeyError, IndexError, json.JSONDecodeError):
+                    pass
+
+
 class CloudChatRequestWithKeys(CloudChatRequest):
     openrouter_key: str = ""
     gemini_key: str = ""
+    groq_key: str = ""
+    together_key: str = ""
+    fireworks_key: str = ""
+    huggingface_key: str = ""
+    puter_key: str = ""
+    router_key: str = ""
+    router_base_url: str = ""
 
 
 def _status(msg: str) -> str:
@@ -335,8 +547,18 @@ async def cloud_chat(
     if not _is_allowed(body.model):
         raise HTTPException(status_code=400, detail=f"Unsupported model: {body.model}")
 
-    is_gemini = body.model.startswith("gemini-")
-    use_auto  = body.model == "openrouter:auto"
+    raw_model = body.model
+    is_gemini = raw_model.startswith("gemini-")
+    use_auto  = raw_model in ("openrouter:auto", "auto")
+
+    selected_provider: str | None = None
+    selected_model_id: str | None = None
+    if ":" in raw_model:
+        prefix, rest = raw_model.split(":", 1)
+        prefix = prefix.strip().lower()
+        if prefix in _OPENAI_COMPAT_BASE_URLS or prefix == "router":
+            selected_provider = prefix
+            selected_model_id = rest.strip() or None
 
     chat = (
         db.query(models.Chat)
@@ -367,14 +589,21 @@ async def cloud_chat(
         if use_auto:
             openrouter_key = body.openrouter_key or os.environ.get("OPENROUTER_API_KEY", "")
             gemini_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
+            groq_key = body.groq_key or os.environ.get("GROQ_API_KEY", "")
+            together_key = body.together_key or os.environ.get("TOGETHER_API_KEY", "")
+            fireworks_key = body.fireworks_key or os.environ.get("FIREWORKS_API_KEY", "")
+            huggingface_key = body.huggingface_key or os.environ.get("HUGGINGFACE_API_KEY", "")
+            puter_key = body.puter_key or os.environ.get("PUTER_AUTH_TOKEN", "")
+            router_key = body.router_key or os.environ.get("ROUTER_API_KEY", "")
+            router_base_url = (body.router_base_url or os.environ.get("ROUTER_BASE_URL", "")).strip()
 
-            if not openrouter_key and not gemini_key:
-                yield f"data: {json.dumps({'error': 'A cloud API key is required. Add an OpenRouter key or a Gemini key in the model picker.'})}\n\n"
+            if not any([openrouter_key, gemini_key, groq_key, together_key, fireworks_key, huggingface_key, puter_key, router_key]):
+                yield f"data: {json.dumps({'error': 'A cloud API key is required. Add a key in the model picker (OpenRouter, Gemini, Groq, Together, Fireworks, Hugging Face, or Puter).'})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 
-            # (provider, model_id, label, score, rank)
-            candidates: list[tuple[str, str, str, int, int]] = []
+            # (provider, model_id, label, score, rank, base_url, api_key)
+            candidates: list[tuple[str, str, str, int, int, str, str]] = []
             reason_counts: dict[str, int] = {}
             best_retry_after_s: int | None = None
 
@@ -388,36 +617,62 @@ async def cloud_chat(
                 reason_counts[reason] = reason_counts.get(reason, 0) + 1
 
             def _classify(provider: str, error_text: str) -> str:
-                if provider == "openrouter":
-                    if error_text in ("rate_limited", "quota_exceeded"):
-                        return error_text
-                    if error_text.startswith("Invalid OpenRouter API key"):
-                        return "invalid_key"
-                    if error_text.startswith("OpenRouter error:"):
-                        return "provider_error"
-                    if error_text == "unavailable":
-                        return "unavailable"
-                    return "other"
-                # Gemini
+                if error_text in ("rate_limited", "quota_exceeded"):
+                    return error_text
+                if error_text == "unavailable":
+                    return "unavailable"
+                if error_text.lower().startswith("invalid "):
+                    return "invalid_key"
                 low = error_text.lower()
                 if "rate limit" in low:
                     return "rate_limited"
-                if "invalid gemini api key" in low:
-                    return "invalid_key"
-                if error_text.startswith("Gemini error:"):
+                if "quota" in low and "exceed" in low:
+                    return "quota_exceeded"
+                if " error:" in low:
                     return "provider_error"
-                if error_text == "unavailable":
-                    return "unavailable"
                 return "other"
 
+            provider_rank_base = {
+                "openrouter": 0,
+                "puter": 100_000,
+                "huggingface": 200_000,
+                "groq": 300_000,
+                "fireworks": 400_000,
+                "together": 500_000,
+                "router": 600_000,
+                "gemini": 900_000,
+            }
+
             if openrouter_key:
-                or_chain = await _fetch_or_free_models(openrouter_key)
-                for idx, (mid, label) in enumerate(or_chain):
-                    candidates.append(("openrouter", mid, label, MODEL_QUALITY.get(mid, 0), idx))
+                or_models = await _fetch_or_free_models_detailed(openrouter_key)
+                for idx, m in enumerate(or_models):
+                    mid = m.get("id") or ""
+                    label = _clean_or_name(m.get("name") or mid)
+                    score = int(m.get("quality") or MODEL_QUALITY.get(mid, 0) or 0)
+                    candidates.append(("openrouter", mid, label, score, provider_rank_base["openrouter"] + idx, "", openrouter_key))
 
             if gemini_key:
                 for idx, (mid, label) in enumerate(AUTO_GEMINI_MODELS):
-                    candidates.append(("gemini", mid, label, AUTO_MODEL_QUALITY.get(mid, 0), 1_000_000 + idx))
+                    candidates.append(("gemini", mid, label, int(AUTO_MODEL_QUALITY.get(mid, 0) or 0), provider_rank_base["gemini"] + idx, "", gemini_key))
+
+            async def _add_compat(provider: str, api_key: str, base_url: str):
+                if not api_key:
+                    return
+                models = await _fetch_openai_compat_models(provider, api_key, base_url)
+                base = provider_rank_base.get(provider, 800_000)
+                for idx, m in enumerate(models):
+                    mid = m.get("id") or ""
+                    label = str(m.get("name") or mid)
+                    score = int(m.get("quality") or 0)
+                    candidates.append((provider, mid, label, score, base + idx, base_url, api_key))
+
+            await _add_compat("puter", puter_key, _OPENAI_COMPAT_BASE_URLS["puter"])
+            await _add_compat("huggingface", huggingface_key, _OPENAI_COMPAT_BASE_URLS["huggingface"])
+            await _add_compat("groq", groq_key, _OPENAI_COMPAT_BASE_URLS["groq"])
+            await _add_compat("together", together_key, _OPENAI_COMPAT_BASE_URLS["together"])
+            await _add_compat("fireworks", fireworks_key, _OPENAI_COMPAT_BASE_URLS["fireworks"])
+            if router_key and router_base_url:
+                await _add_compat("router", router_key, router_base_url)
 
             if not candidates:
                 yield f"data: {json.dumps({'error': 'No cloud models are available to try right now.', 'suggest_local': True, 'reason': 'No cloud models available to try.'})}\n\n"
@@ -429,7 +684,7 @@ async def cloud_chat(
             last_error: str | None = None
             attempted = 0
 
-            for provider, model_id, model_label, _, _ in candidates:
+            for provider, model_id, model_label, _, _, base_url, api_key in candidates:
                 attempted += 1
                 yield _status(f"Trying {model_label}...")
 
@@ -438,7 +693,7 @@ async def cloud_chat(
 
                 try:
                     if provider == "gemini":
-                        async for token, error, _meta in _stream_gemini(model_id, history, body.content, gemini_key):
+                        async for token, error, _meta in _stream_gemini(model_id, history, body.content, api_key):
                             if error:
                                 error_text = error
                                 break
@@ -449,9 +704,9 @@ async def cloud_chat(
                             if token:
                                 full_text += token
                                 yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
-                    else:
+                    elif provider == "openrouter":
                         sent_usage = False
-                        async for token, error, meta in _stream_openrouter(model_id, history, body.content, openrouter_key):
+                        async for token, error, meta in _stream_openrouter(model_id, history, body.content, api_key):
                             if meta and not sent_usage:
                                 sent_usage = True
                                 yield f"data: {json.dumps({'type': 'usage', 'provider': 'openrouter', 'id': model_id, 'usage': meta})}\n\n"
@@ -463,6 +718,25 @@ async def cloud_chat(
                                 break
                             if token and not got_token:
                                 yield f"data: {json.dumps({'type': 'model', 'provider': 'openrouter', 'id': model_id, 'label': model_label})}\n\n"
+                                yield _status("")
+                                got_token = True
+                            if token:
+                                full_text += token
+                                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                    else:
+                        sent_usage = False
+                        async for token, error, meta in _stream_openai_compat(provider, base_url, model_id, history, body.content, api_key):
+                            if meta and not sent_usage:
+                                sent_usage = True
+                                yield f"data: {json.dumps({'type': 'usage', 'provider': provider, 'id': model_id, 'usage': meta})}\n\n"
+                                ra = meta.get("retryAfter")
+                                if isinstance(ra, int) and ra > 0:
+                                    best_retry_after_s = ra if best_retry_after_s is None else min(best_retry_after_s, ra)
+                            if error:
+                                error_text = error
+                                break
+                            if token and not got_token:
+                                yield f"data: {json.dumps({'type': 'model', 'provider': provider, 'id': model_id, 'label': model_label})}\n\n"
                                 yield _status("")
                                 got_token = True
                             if token:
@@ -491,13 +765,19 @@ async def cloud_chat(
                         or error_text.startswith("OpenRouter error:")
                         or error_text.startswith("Invalid OpenRouter API key")
                     )
-                else:
+                elif provider == "gemini":
                     low = error_text.lower()
                     retryable = (
                         ("rate limit" in low)
                         or ("gemini error:" in low)
                         or ("invalid gemini api key" in low)
                         or (error_text == "unavailable")
+                    )
+                else:
+                    retryable = (
+                        error_text in ("rate_limited", "quota_exceeded", "unavailable")
+                        or error_text.lower().startswith("invalid ")
+                        or error_text.lower().startswith(f"{provider} error:")
                     )
 
                 if retryable and attempted <= 4:
@@ -533,6 +813,49 @@ async def cloud_chat(
                 return
 
         # ── Gemini ───────────────────────────────────────────────────────────
+        elif selected_provider and selected_model_id:
+            provider = selected_provider
+            model_id = selected_model_id
+            if provider == "router":
+                base_url = (body.router_base_url or "").strip()
+                api_key = body.router_key or os.environ.get("ROUTER_API_KEY", "")
+                if not base_url:
+                    yield f"data: {json.dumps({'error': 'Router base URL required. Add it in the model picker.'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+            else:
+                base_url = _OPENAI_COMPAT_BASE_URLS.get(provider, "")
+                api_key = getattr(body, f"{provider}_key") or os.environ.get(f"{provider.upper()}_API_KEY", "")
+
+            if not api_key:
+                yield f"data: {json.dumps({'error': f'{provider} API key required. Add your key in the model picker.'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            yield _status(f"Using {provider}...")
+            try:
+                got_token = False
+                sent_usage = False
+                async for token, error, meta in _stream_openai_compat(provider, base_url, model_id, history, body.content, api_key):
+                    if meta and not sent_usage:
+                        sent_usage = True
+                        yield f"data: {json.dumps({'type': 'usage', 'provider': provider, 'id': model_id, 'usage': meta})}\n\n"
+                    if error:
+                        yield f"data: {json.dumps({'error': error})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                    if token and not got_token:
+                        got_token = True
+                        yield f"data: {json.dumps({'type': 'model', 'provider': provider, 'id': model_id, 'label': model_id})}\n\n"
+                        yield _status("")
+                    if token:
+                        full_text += token
+                        yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
         elif is_gemini:
             api_key = body.gemini_key or os.environ.get("GEMINI_API_KEY", "")
             if not api_key:
