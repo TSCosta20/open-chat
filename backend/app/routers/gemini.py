@@ -172,7 +172,7 @@ class CloudChatRequest(BaseModel):
 # ── Gemini streaming ──────────────────────────────────────────────────────────
 
 async def _stream_gemini(model: str, history: list, new_content: str, api_key: str):
-    """Yields (token, error) tuples from the Gemini SSE stream."""
+    """Yields (token, error, meta) tuples from the Gemini SSE stream."""
     contents = [
         {"role": "user" if m.role == "user" else "model", "parts": [{"text": m.content}]}
         for m in history
@@ -185,15 +185,15 @@ async def _stream_gemini(model: str, history: list, new_content: str, api_key: s
             if resp.status_code != 200:
                 body = await resp.aread()
                 if resp.status_code == 429:
-                    yield None, "Gemini rate limit reached. Wait a moment and try again, or use a different model."
+                    yield None, "Gemini rate limit reached. Wait a moment and try again, or use a different model.", None
                 elif resp.status_code in (401, 403):
-                    yield None, "Invalid Gemini API key. Please check your key in the model picker."
+                    yield None, "Invalid Gemini API key. Please check your key in the model picker.", None
                 else:
                     try:
                         detail = json.loads(body).get("error", {}).get("message", body.decode()[:120])
                     except Exception:
                         detail = body.decode()[:120]
-                    yield None, f"Gemini error: {detail}"
+                    yield None, f"Gemini error: {detail}", None
                 return
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
@@ -204,15 +204,41 @@ async def _stream_gemini(model: str, history: list, new_content: str, api_key: s
                 try:
                     chunk = json.loads(data)
                     text = chunk["candidates"][0]["content"]["parts"][0]["text"]
-                    yield text, None
+                    yield text, None, None
                 except (KeyError, IndexError, json.JSONDecodeError):
                     pass
 
 
 # ── OpenRouter streaming ──────────────────────────────────────────────────────
 
+def _parse_openrouter_ratelimits(headers: httpx.Headers) -> dict | None:
+    def get_int(name: str) -> int | None:
+        raw = headers.get(name)
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except Exception:
+            return None
+
+    req_limit = get_int("x-ratelimit-limit-requests")
+    req_remaining = get_int("x-ratelimit-remaining-requests")
+    req_reset = get_int("x-ratelimit-reset-requests")
+    tok_limit = get_int("x-ratelimit-limit-tokens")
+    tok_remaining = get_int("x-ratelimit-remaining-tokens")
+    tok_reset = get_int("x-ratelimit-reset-tokens")
+
+    data: dict = {}
+    if req_limit is not None or req_remaining is not None:
+        data["requests"] = {"limit": req_limit, "remaining": req_remaining, "reset": req_reset}
+    if tok_limit is not None or tok_remaining is not None:
+        data["tokens"] = {"limit": tok_limit, "remaining": tok_remaining, "reset": tok_reset}
+
+    return data or None
+
+
 async def _stream_openrouter(model: str, history: list, new_content: str, api_key: str):
-    """Yields (token, error) tuples from the OpenRouter SSE stream."""
+    """Yields (token, error, meta) tuples from the OpenRouter SSE stream."""
     messages = [
         {"role": m.role, "content": m.content}
         for m in history
@@ -232,18 +258,23 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
             if resp.status_code != 200:
                 err_body = await resp.aread()
                 if resp.status_code == 429:
-                    yield None, "rate_limited"
+                    yield None, "rate_limited", None
                 elif resp.status_code == 402:
-                    yield None, "quota_exceeded"
+                    yield None, "quota_exceeded", None
                 elif resp.status_code == 401:
-                    yield None, "Invalid OpenRouter API key. Please check your key in the model picker."
+                    yield None, "Invalid OpenRouter API key. Please check your key in the model picker.", None
                 else:
                     try:
                         detail = json.loads(err_body).get("error", {}).get("message", err_body.decode()[:120])
                     except Exception:
                         detail = err_body.decode()[:120]
-                    yield None, f"OpenRouter error: {detail}"
+                    yield None, f"OpenRouter error: {detail}", None
                 return
+
+            meta = _parse_openrouter_ratelimits(resp.headers)
+            if meta:
+                yield None, None, meta
+
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -256,15 +287,15 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
                     if "error" in chunk:
                         code = chunk["error"].get("code", 0)
                         if code == 429:
-                            yield None, "rate_limited"
+                            yield None, "rate_limited", None
                         elif code == 402:
-                            yield None, "quota_exceeded"
+                            yield None, "quota_exceeded", None
                         else:
-                            yield None, chunk["error"].get("message", "Unknown error")
+                            yield None, chunk["error"].get("message", "Unknown error"), None
                         return
                     text = chunk["choices"][0]["delta"].get("content", "")
                     if text:
-                        yield text, None
+                        yield text, None, None
                 except (KeyError, IndexError, json.JSONDecodeError):
                     pass
 
@@ -353,25 +384,33 @@ async def cloud_chat(
 
                 try:
                     if provider == "gemini":
-                        async for token, error in _stream_gemini(model_id, history, body.content, gemini_key):
+                        async for token, error, _meta in _stream_gemini(model_id, history, body.content, gemini_key):
                             if error:
                                 error_text = error
                                 break
-                            if not got_token:
+                            if token and not got_token:
+                                yield f"data: {json.dumps({'type': 'model', 'provider': 'gemini', 'id': model_id, 'label': model_label})}\n\n"
                                 yield _status("")
                                 got_token = True
-                            full_text += token
-                            yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                            if token:
+                                full_text += token
+                                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
                     else:
-                        async for token, error in _stream_openrouter(model_id, history, body.content, openrouter_key):
+                        sent_usage = False
+                        async for token, error, meta in _stream_openrouter(model_id, history, body.content, openrouter_key):
+                            if meta and not sent_usage:
+                                sent_usage = True
+                                yield f"data: {json.dumps({'type': 'usage', 'provider': 'openrouter', 'id': model_id, 'usage': meta})}\n\n"
                             if error:
                                 error_text = error
                                 break
-                            if not got_token:
+                            if token and not got_token:
+                                yield f"data: {json.dumps({'type': 'model', 'provider': 'openrouter', 'id': model_id, 'label': model_label})}\n\n"
                                 yield _status("")
                                 got_token = True
-                            full_text += token
-                            yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                            if token:
+                                full_text += token
+                                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
                 except Exception:
                     error_text = "unavailable"
 
@@ -422,13 +461,19 @@ async def cloud_chat(
                 return
             yield _status("Using Gemini…")
             try:
-                async for token, error in _stream_gemini(body.model, history, body.content, api_key):
+                got_token = False
+                async for token, error, _meta in _stream_gemini(body.model, history, body.content, api_key):
                     if error:
                         yield f"data: {json.dumps({'error': error})}\n\n"
                         yield "data: [DONE]\n\n"
                         return
-                    full_text += token
-                    yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                    if token and not got_token:
+                        got_token = True
+                        yield f"data: {json.dumps({'type': 'model', 'provider': 'gemini', 'id': body.model, 'label': body.model})}\n\n"
+                    if token:
+                        if token:
+                            full_text += token
+                            yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 yield "data: [DONE]\n\n"
@@ -461,16 +506,22 @@ async def cloud_chat(
                 skip_reason: str | None = None
 
                 try:
-                    async for token, error in _stream_openrouter(model_id, history, body.content, api_key):
+                    sent_usage = False
+                    async for token, error, meta in _stream_openrouter(model_id, history, body.content, api_key):
+                        if meta and not sent_usage:
+                            sent_usage = True
+                            yield f"data: {json.dumps({'type': 'usage', 'provider': 'openrouter', 'id': model_id, 'usage': meta})}\n\n"
                         if error:
                             failed = True
                             skip_reason = error
                             break
-                        if not got_token:
+                        if token and not got_token:
+                            yield f"data: {json.dumps({'type': 'model', 'provider': 'openrouter', 'id': model_id, 'label': model_label})}\n\n"
                             yield _status("")   # clear "Trying…" status
                             got_token = True
-                        full_text += token
-                        yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                        if token:
+                            full_text += token
+                            yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
                 except Exception:
                     failed = True
                     skip_reason = "unavailable"

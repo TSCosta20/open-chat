@@ -73,6 +73,8 @@ export function useChat(chatId: string) {
           finalContent = await generateChromeAI(llmMessages, onToken);
         } else if (cloudModelId) {
           const { openRouterKey, geminiKey } = getStoredApiKeys();
+          store.setCloudModelInUse(chatId, null);
+          store.setCloudUsage(chatId, null);
           finalContent = await streamCloud(
             chatId,
             content,
@@ -80,6 +82,8 @@ export function useChat(chatId: string) {
             token,
             onToken,
             (s) => store.setCloudStatus(chatId, s),
+            (m) => store.setCloudModelInUse(chatId, m),
+            (u) => store.setCloudUsage(chatId, u),
             openRouterKey,
             geminiKey,
           );
@@ -219,6 +223,8 @@ async function streamCloud(
   authToken: string | undefined,
   onToken: (t: string) => void,
   onStatus: (s: string) => void,
+  onModel: (m: { provider: string; id: string; label: string }) => void,
+  onUsage: (u: { requests?: any; tokens?: any } | null) => void,
   openRouterKey = "",
   geminiKey = "",
 ): Promise<string> {
@@ -268,6 +274,14 @@ async function streamCloud(
         }
         if (parsed.type === "status") {
           onStatus(parsed.text ?? "");
+        } else if (parsed.type === "model") {
+          onModel({
+            provider: parsed.provider ?? "cloud",
+            id: parsed.id ?? "",
+            label: parsed.label ?? parsed.id ?? "Unknown model",
+          });
+        } else if (parsed.type === "usage") {
+          onUsage(parsed.usage ?? null);
         } else if (parsed.type === "token" || parsed.token) {
           const tok = parsed.text ?? parsed.token;
           full += tok;

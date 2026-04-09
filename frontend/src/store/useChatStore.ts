@@ -53,6 +53,18 @@ interface ChatStore {
   cloudStatus: Record<string, string>;
   setCloudStatus: (chatId: string, status: string) => void;
 
+  cloudModelInUse: Record<
+    string,
+    { provider: string; id: string; label: string } | null
+  >;
+  setCloudModelInUse: (
+    chatId: string,
+    info: { provider: string; id: string; label: string } | null,
+  ) => void;
+
+  cloudUsage: Record<string, { requests?: any; tokens?: any } | null>;
+  setCloudUsage: (chatId: string, usage: { requests?: any; tokens?: any } | null) => void;
+
   // When true, model picker opens on local tab with cloud hidden
   pickerLocalOnly: boolean;
   setPickerLocalOnly: (val: boolean) => void;
@@ -73,6 +85,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   streamingContent: {},
   isStreaming: {},
   cloudStatus: {},
+  cloudModelInUse: {},
+  cloudUsage: {},
   selectedModel: {},
   modelReady: false,
   modelLoadProgress: 0,
@@ -127,6 +141,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setCloudStatus: (chatId, status) =>
     set((s) => ({ cloudStatus: { ...s.cloudStatus, [chatId]: status } })),
+
+  setCloudModelInUse: (chatId, info) =>
+    set((s) => ({ cloudModelInUse: { ...s.cloudModelInUse, [chatId]: info } })),
+
+  setCloudUsage: (chatId, usage) =>
+    set((s) => ({ cloudUsage: { ...s.cloudUsage, [chatId]: usage } })),
 
   pickerLocalOnly: false,
   setPickerLocalOnly: (val) => set({ pickerLocalOnly: val }),
