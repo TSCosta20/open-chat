@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from pydantic import Field
 from app.database import get_db
 from app import models
 from app.auth import get_user_id
@@ -18,6 +19,11 @@ router = APIRouter(tags=["cloud"])
 _GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models"
     "/{model}:streamGenerateContent?alt=sse&key={key}"
+)
+
+_GEMINI_GEN_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models"
+    "/{model}:generateContent?key={key}"
 )
 
 # OpenRouter (OpenAI-compatible, streaming)
@@ -115,6 +121,31 @@ def _should_skip_model_id(model_id: str) -> bool:
     return any(p in low for p in _SKIP_MODEL_PATTERNS)
 
 
+def _msg_role(m) -> str:
+    if isinstance(m, dict):
+        return str(m.get("role") or "")
+    return str(getattr(m, "role", ""))
+
+
+def _msg_content(m) -> str:
+    if isinstance(m, dict):
+        return str(m.get("content") or "")
+    return str(getattr(m, "content", ""))
+
+
+def _to_openai_messages(history: list) -> list[dict]:
+    out: list[dict] = []
+    for m in history:
+        role = _msg_role(m)
+        content = _msg_content(m)
+        if not role or not content:
+            continue
+        if role not in ("system", "user", "assistant"):
+            continue
+        out.append({"role": role, "content": content})
+    return out
+
+
 def _quality_score(model_id: str) -> int:
     """Cross-provider approximate quality score. Higher = try earlier."""
     # Exact OpenRouter IDs (free tier) are scored by explicit mapping
@@ -158,6 +189,203 @@ def _quality_score(model_id: str) -> int:
             return 30
 
     return 0
+
+
+def _parse_param_b(model_id: str) -> float | None:
+    import re
+    low = model_id.lower()
+    m = re.search(r"(\d{1,3})(?:\.(\d))?b", low)
+    if not m:
+        return None
+    whole = int(m.group(1))
+    frac = int(m.group(2) or 0)
+    return whole + (frac / 10.0)
+
+
+def _efficiency_score(provider: str, model_id: str) -> int:
+    """Lower = more token-friendly (smaller/faster)."""
+    low = model_id.lower()
+
+    # Gemini naming
+    if provider == "gemini":
+        if "flash" in low:
+            return 25
+        return 60
+
+    # Heuristic by parameter count when present
+    b = _parse_param_b(model_id)
+    if b is not None:
+        return int(round(b * 10))
+
+    if "mini" in low:
+        return 80
+    if "small" in low:
+        return 120
+    if "fast" in low or "instant" in low:
+        return 150
+
+    # Unknown size
+    return 5000
+
+
+async def _chat_complete_openai_json(
+    provider: str,
+    url: str,
+    model: str,
+    messages: list[dict],
+    api_key: str,
+    extra_headers: dict | None = None,
+) -> str:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+
+    body = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0,
+        "max_tokens": 48,
+        "stream": False,
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(url, headers=headers, json=body)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"{provider} classifier failed ({resp.status_code})")
+        data = resp.json()
+        return (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
+
+
+async def _classify_request_gemini(history: list, new_content: str, api_key: str, model: str = "gemini-2.0-flash") -> str | None:
+    recent = history[-8:] if len(history) > 8 else history
+    transcript = "\n".join([f"{_msg_role(m).upper()}: {_msg_content(m)}" for m in recent] + [f"USER: {new_content}"])
+
+    prompt = (
+        "Output ONLY valid JSON. Decide if the last user message can be answered briefly without deep reasoning, coding, "
+        "or multi-step work. Return {\"complexity\":\"simple\"} or {\"complexity\":\"complex\"}.\n\n"
+        f"{transcript}"
+    )
+
+    url = _GEMINI_GEN_URL.format(model=model, key=api_key)
+    body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(url, json=body)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            text = (
+                (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}])[0].get("text")
+                or ""
+            )
+            parsed = json.loads(text.strip() or "{}")
+            complexity = str(parsed.get("complexity") or "").strip().lower()
+            if complexity in ("simple", "complex"):
+                return complexity
+            return None
+    except Exception:
+        return None
+
+
+async def _classify_request(
+    history: list,
+    new_content: str,
+    candidates_by_provider: dict[str, list[dict]],
+    keys: dict[str, str],
+    router_base_url: str = "",
+) -> str | None:
+    """
+    Uses a very small/cheap model to classify whether the request is 'simple'.
+    Returns "simple" | "complex" | None.
+    """
+    # Build a minimal context window
+    recent = history[-8:] if len(history) > 8 else history
+    ctx_msgs = _to_openai_messages(recent)
+    ctx_msgs.append({"role": "user", "content": new_content})
+
+    system = (
+        "You are a classifier. Output ONLY valid JSON. "
+        "Decide if the last user message can be answered briefly without deep reasoning, coding, or multi-step work. "
+        "Return {\"complexity\":\"simple\"} or {\"complexity\":\"complex\"}."
+    )
+    messages = [{"role": "system", "content": system}, *ctx_msgs]
+
+    # Pick the smallest available model among enabled providers
+    best: tuple[int, str, str, str] | None = None  # (eff, provider, model_id, url)
+
+    # OpenRouter (special headers)
+    if keys.get("openrouter") and candidates_by_provider.get("openrouter"):
+        for m in candidates_by_provider["openrouter"]:
+            mid = m.get("id") or ""
+            if not mid or _should_skip_model_id(mid):
+                continue
+            eff = _efficiency_score("openrouter", mid)
+            if best is None or eff < best[0]:
+                best = (eff, "openrouter", mid, _OPENROUTER_URL)
+
+    # OpenAI-compatible providers
+    for provider in ("puter", "huggingface", "groq", "together", "fireworks", "router"):
+        if provider == "router" and not router_base_url:
+            continue
+        key = keys.get(provider, "")
+        if not key:
+            continue
+        models = candidates_by_provider.get(provider) or []
+        for m in models:
+            mid = m.get("id") or ""
+            if not mid or _should_skip_model_id(mid):
+                continue
+            eff = _efficiency_score(provider, mid)
+            base_url = router_base_url if provider == "router" else _OPENAI_COMPAT_BASE_URLS.get(provider, "")
+            if not base_url:
+                continue
+            url = base_url.rstrip("/") + "/chat/completions"
+            if best is None or eff < best[0]:
+                best = (eff, provider, mid, url)
+
+    # Gemini (fallback)
+    if best is None and keys.get("gemini"):
+        return await _classify_request_gemini(history, new_content, keys["gemini"])
+
+    if best is None:
+        return None
+
+    eff, provider, model_id, url = best
+
+    try:
+        if provider == "openrouter":
+            text = await _chat_complete_openai_json(
+                provider="openrouter",
+                url=url,
+                model=model_id,
+                messages=messages,
+                api_key=keys["openrouter"],
+                extra_headers={
+                    "HTTP-Referer": "https://openchat.waldyn.com",
+                    "X-Title": "OpenChat",
+                },
+            )
+        else:
+            api_key = keys[provider]
+            text = await _chat_complete_openai_json(
+                provider=provider,
+                url=url,
+                model=model_id,
+                messages=messages,
+                api_key=api_key,
+            )
+
+        parsed = json.loads(text.strip() or "{}")
+        complexity = str(parsed.get("complexity") or "").strip().lower()
+        if complexity in ("simple", "complex"):
+            return complexity
+        return None
+    except Exception:
+        return None
 
 
 def _model_label(model_id: str) -> str:
@@ -329,6 +557,7 @@ class CloudChatRequest(BaseModel):
     chat_id: str
     content: str
     model: str = "openrouter:auto"
+    context_messages: list[dict] = Field(default_factory=list)
 
 
 # ── Gemini streaming ──────────────────────────────────────────────────────────
@@ -336,8 +565,12 @@ class CloudChatRequest(BaseModel):
 async def _stream_gemini(model: str, history: list, new_content: str, api_key: str):
     """Yields (token, error, meta) tuples from the Gemini SSE stream."""
     contents = [
-        {"role": "user" if m.role == "user" else "model", "parts": [{"text": m.content}]}
+        {
+            "role": "model" if _msg_role(m) == "assistant" else "user",
+            "parts": [{"text": _msg_content(m)}],
+        }
         for m in history
+        if _msg_content(m)
     ]
     contents.append({"role": "user", "parts": [{"text": new_content}]})
 
@@ -404,10 +637,7 @@ def _parse_openrouter_ratelimits(headers: httpx.Headers) -> dict | None:
 
 async def _stream_openrouter(model: str, history: list, new_content: str, api_key: str):
     """Yields (token, error, meta) tuples from the OpenRouter SSE stream."""
-    messages = [
-        {"role": m.role, "content": m.content}
-        for m in history
-    ]
+    messages = _to_openai_messages(history)
     messages.append({"role": "user", "content": new_content})
 
     headers = {
@@ -472,7 +702,7 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
 
 async def _stream_openai_compat(provider: str, base_url: str, model: str, history: list, new_content: str, api_key: str):
     """Yields (token, error, meta) tuples from an OpenAI-compatible SSE stream."""
-    messages = [{"role": m.role, "content": m.content} for m in history]
+    messages = _to_openai_messages(history)
     messages.append({"role": "user", "content": new_content})
 
     url = base_url.rstrip("/") + "/chat/completions"
@@ -575,12 +805,18 @@ async def cloud_chat(
         db.add(chat)
         db.commit()
 
-    history = (
+    db_history = (
         db.query(models.Message)
         .filter(models.Message.chat_id == body.chat_id)
         .order_by(models.Message.created_at.asc())
         .all()
     )
+
+    # If the client provides a condensed context, use it for inference to reduce tokens.
+    # This does NOT affect persistence: we still store the user + assistant messages normally.
+    provided = body.context_messages or []
+    context_history = _to_openai_messages(provided) if provided else [{"role": m.role, "content": m.content} for m in db_history]
+    history = context_history
 
     async def generate():
         full_text = ""
@@ -604,6 +840,7 @@ async def cloud_chat(
 
             # (provider, model_id, label, score, rank, base_url, api_key)
             candidates: list[tuple[str, str, str, int, int, str, str]] = []
+            models_by_provider: dict[str, list[dict]] = {}
             reason_counts: dict[str, int] = {}
             best_retry_after_s: int | None = None
 
@@ -645,6 +882,7 @@ async def cloud_chat(
 
             if openrouter_key:
                 or_models = await _fetch_or_free_models_detailed(openrouter_key)
+                models_by_provider["openrouter"] = or_models
                 for idx, m in enumerate(or_models):
                     mid = m.get("id") or ""
                     label = _clean_or_name(m.get("name") or mid)
@@ -652,6 +890,7 @@ async def cloud_chat(
                     candidates.append(("openrouter", mid, label, score, provider_rank_base["openrouter"] + idx, "", openrouter_key))
 
             if gemini_key:
+                models_by_provider["gemini"] = [{"id": mid, "name": label, "quality": int(AUTO_MODEL_QUALITY.get(mid, 0) or 0)} for mid, label in AUTO_GEMINI_MODELS]
                 for idx, (mid, label) in enumerate(AUTO_GEMINI_MODELS):
                     candidates.append(("gemini", mid, label, int(AUTO_MODEL_QUALITY.get(mid, 0) or 0), provider_rank_base["gemini"] + idx, "", gemini_key))
 
@@ -659,6 +898,7 @@ async def cloud_chat(
                 if not api_key:
                     return
                 models = await _fetch_openai_compat_models(provider, api_key, base_url)
+                models_by_provider[provider] = models
                 base = provider_rank_base.get(provider, 800_000)
                 for idx, m in enumerate(models):
                     mid = m.get("id") or ""
@@ -679,7 +919,28 @@ async def cloud_chat(
                 yield "data: [DONE]\n\n"
                 return
 
-            candidates.sort(key=lambda c: (-c[3], c[4]))
+            complexity = await _classify_request(
+                history=history,
+                new_content=body.content,
+                candidates_by_provider=models_by_provider,
+                keys={
+                    "openrouter": openrouter_key,
+                    "gemini": gemini_key,
+                    "groq": groq_key,
+                    "together": together_key,
+                    "fireworks": fireworks_key,
+                    "huggingface": huggingface_key,
+                    "puter": puter_key,
+                    "router": router_key,
+                },
+                router_base_url=router_base_url,
+            )
+            prefer_efficient = complexity == "simple"
+            if prefer_efficient:
+                yield _status("Choosing a token-friendly model...")
+                candidates.sort(key=lambda c: (_efficiency_score(c[0], c[1]), -c[3], c[4]))
+            else:
+                candidates.sort(key=lambda c: (-c[3], c[4]))
 
             last_error: str | None = None
             attempted = 0

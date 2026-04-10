@@ -14,6 +14,7 @@ import { getSuggestionsForDevice } from "@/lib/ollamaSuggestions";
 import { useOpenRouterModels } from "@/hooks/useOpenRouterModels";
 import { useCloudProviderModels } from "@/hooks/useCloudProviderModels";
 import { useApiKeys } from "@/hooks/useApiKeys";
+import { usePersonalization, type PersonalizationLevel } from "@/hooks/usePersonalization";
 import Link from "next/link";
 import { updateChatModel } from "@/lib/api";
 import {
@@ -86,6 +87,8 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [hfSaved, setHfSaved]           = useState(false);
   const [puterSaved, setPuterSaved]     = useState(false);
   const [routerSaved, setRouterSaved]   = useState(false);
+  const [personalizationDraft, setPersonalizationDraft] = useState("");
+  const [personalizationSaved, setPersonalizationSaved] = useState(false);
 
   const { models: puterModels, loading: puterLoading, error: puterError } = useCloudProviderModels({ provider: "puter", apiKey: puterKey });
   const { models: hfModels, loading: hfLoading, error: hfError } = useCloudProviderModels({ provider: "huggingface", apiKey: huggingFaceKey });
@@ -94,8 +97,18 @@ export function ModelPickerScreen({ chatId }: Props) {
   const { models: fireworksModels, loading: fireworksLoading, error: fireworksError } = useCloudProviderModels({ provider: "fireworks", apiKey: fireworksKey });
   const { models: routerModels, loading: routerLoading, error: routerError } = useCloudProviderModels({ provider: "router", apiKey: routerKey, baseUrl: routerBaseUrl });
 
+  const {
+    level: personalizationLevel,
+    instructions: personalizationInstructions,
+    saveLevel: savePersonalizationLevel,
+    saveInstructions: savePersonalizationInstructions,
+  } = usePersonalization();
+
   useEffect(() => { checkChromeAI().then(setChromeStatus); }, []);
   useEffect(() => { checkOllama().then(setOllamaResult); }, []);
+  useEffect(() => {
+    setPersonalizationDraft(personalizationInstructions ?? "");
+  }, [personalizationInstructions]);
 
   if (modelReady) return null;
 
@@ -108,7 +121,7 @@ export function ModelPickerScreen({ chatId }: Props) {
     !!fireworksKey ||
     !!huggingFaceKey ||
     !!puterKey ||
-    !!routerKey;
+    (!!routerKey && !!routerBaseUrl);
 
   const isNoWebGPU  = cap.ready && !cap.hasWebGPU;
   const ollamaList  = ollamaResult !== "loading" && ollamaResult.status === "ok" ? ollamaResult.models : [];
@@ -898,6 +911,62 @@ export function ModelPickerScreen({ chatId }: Props) {
                   {routerSaved ? "Saved âœ“" : "Save"}
                 </button>
               </div>
+            </div>
+
+            {/* Personalization */}
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-300">Personalization</p>
+                {personalizationSaved
+                  ? <Pill green>saved</Pill>
+                  : (personalizationDraft.trim() || personalizationLevel !== "low")
+                  ? <Pill blue>custom</Pill>
+                  : <Pill blue>optional</Pill>}
+              </div>
+
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Add instructions the assistant should follow. Lower levels use fewer tokens (shorter preferences + less chat history).
+              </p>
+
+              <div className="flex gap-2">
+                <select
+                  value={personalizationLevel}
+                  onChange={(e) => {
+                    setPersonalizationSaved(false);
+                    savePersonalizationLevel(e.target.value as PersonalizationLevel);
+                  }}
+                  className="rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-accent"
+                >
+                  <option value="low">Low token usage</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+
+                <button
+                  onClick={() => {
+                    savePersonalizationInstructions(personalizationDraft);
+                    setPersonalizationSaved(true);
+                  }}
+                  disabled={personalizationDraft.trim() === (personalizationInstructions ?? "").trim()}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+
+              <textarea
+                value={personalizationDraft}
+                onChange={(e) => { setPersonalizationDraft(e.target.value); setPersonalizationSaved(false); }}
+                placeholder="Example: Keep answers concise. Prefer bullet points. Ask clarifying questions when needed."
+                rows={4}
+                className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent resize-none"
+              />
+
+              {personalizationLevel === "low" && (
+                <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                  Low token usage may forget older parts of the conversation.
+                </p>
+              )}
             </div>
 
           </div>

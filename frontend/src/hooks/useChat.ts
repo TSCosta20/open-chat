@@ -12,6 +12,7 @@ import { speak } from "@/hooks/useVoiceInput";
 import { ALL_MODELS, AVAILABLE_MODELS, TRANSFORMERS_MODELS } from "@/types";
 import type { Message } from "@/types";
 import { getStoredApiKeys } from "@/hooks/useApiKeys";
+import { getStoredPersonalization, type PersonalizationLevel } from "@/hooks/usePersonalization";
 
 // If no token arrives within this time, the device can't handle the model
 const FIRST_TOKEN_TIMEOUT_MS = 30_000;
@@ -45,11 +46,14 @@ export function useChat(chatId: string) {
             c.startsWith("__SUGGEST_LOCAL__")
           );
         });
+      const { level: personalizationLevel, instructions: personalizationInstructions } = getStoredPersonalization();
+      const contextMessages = buildContextMessages(
+        existingHistory.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+        personalizationInstructions,
+        personalizationLevel,
+      );
       const llmMessages = [
-        ...existingHistory.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
+        ...contextMessages,
         { role: "user" as const, content },
       ];
 
@@ -107,6 +111,7 @@ export function useChat(chatId: string) {
             (s) => store.setCloudStatus(chatId, s),
             (m) => store.setCloudModelInUse(chatId, m),
             (u) => store.setCloudUsage(chatId, u),
+            contextMessages,
             openRouterKey,
             geminiKey,
             groqKey,
@@ -274,6 +279,7 @@ async function streamCloud(
   onStatus: (s: string) => void,
   onModel: (m: { provider: string; id: string; label: string }) => void,
   onUsage: (u: { requests?: any; tokens?: any } | null) => void,
+  contextMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   openRouterKey = "",
   geminiKey = "",
   groqKey = "",
@@ -295,6 +301,7 @@ async function streamCloud(
       chat_id: chatId,
       content,
       model: cloudModelId,
+      context_messages: contextMessages,
       openrouter_key: openRouterKey,
       gemini_key: geminiKey,
       groq_key: groqKey,
@@ -380,4 +387,45 @@ async function persistMessages(
     },
     body: JSON.stringify({ user: userContent, assistant: assistantContent }),
   });
+}
+
+function compactInstructions(text: string, maxChars: number): string {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  if (!trimmed) return "";
+  if (trimmed.length <= maxChars) return trimmed;
+  return trimmed.slice(0, maxChars - 1).trimEnd() + "…";
+}
+
+function buildContextMessages(
+  history: Array<{ role: "user" | "assistant"; content: string }>,
+  instructions: string,
+  level: PersonalizationLevel,
+): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+  const inst = instructions.trim();
+  const includeInstructions = !!inst;
+
+  const systemMsg =
+    includeInstructions
+      ? level === "high"
+        ? inst
+        : level === "medium"
+        ? compactInstructions(inst, 1200)
+        : compactInstructions(inst, 400)
+      : "";
+
+  const maxMessages = level === "high" ? Infinity : level === "medium" ? 20 : 8;
+  const sliced = maxMessages === Infinity ? history : history.slice(Math.max(0, history.length - maxMessages));
+
+  const out: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+  if (systemMsg) {
+    out.push({
+      role: "system",
+      content:
+        level === "high"
+          ? systemMsg
+          : `User preferences (keep it brief): ${systemMsg}`,
+    });
+  }
+  out.push(...sliced);
+  return out;
 }
