@@ -85,6 +85,13 @@ export function useCloudProviderModels(opts: {
           const detail = (json as any)?.detail || (json as any)?.error || "";
           throw new Error(detail ? `${status}: ${detail}` : `${status}`);
         }
+        const inlineError = (json as any)?.error;
+        if (inlineError) {
+          setModels([]);
+          setError(true);
+          setErrorMessage(String(inlineError));
+          return;
+        }
         const data: CloudProviderModel[] = ((json as any).data as any[]).map((m) => ({
           id: m.id,
           name: m.name ?? m.id,

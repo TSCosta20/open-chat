@@ -540,8 +540,16 @@ async def list_cloud_models(body: CloudModelListRequest):
     if not body.api_key:
         raise HTTPException(status_code=400, detail=f"{provider} API key required")
 
-    models = await _fetch_openai_compat_models(provider, body.api_key, base_url)
-    return {"data": models, "base_url": base_url}
+    try:
+        models = await _fetch_openai_compat_models(provider, body.api_key, base_url)
+        return {"data": models, "base_url": base_url}
+    except HTTPException as exc:
+        return {
+            "data": [],
+            "base_url": base_url,
+            "error": str(exc.detail),
+            "upstream_status": exc.status_code,
+        }
 
 GEMINI_MODELS = {
     "gemini-2.0-flash",
@@ -926,7 +934,15 @@ async def cloud_chat(
             async def _add_compat(provider: str, api_key: str, base_url: str):
                 if not api_key:
                     return
-                models = await _fetch_openai_compat_models(provider, api_key, base_url)
+                try:
+                    models = await _fetch_openai_compat_models(provider, api_key, base_url)
+                except HTTPException as exc:
+                    models_by_provider[provider] = []
+                    reason_counts[f"{provider}:setup_error"] = reason_counts.get(f"{provider}:setup_error", 0) + 1
+                    last = str(exc.detail or "").strip()
+                    if last:
+                        yield _status(f"Skipping {provider}: {last}")
+                    return
                 models_by_provider[provider] = models
                 base = provider_rank_base.get(provider, 800_000)
                 for idx, m in enumerate(models):
@@ -935,13 +951,19 @@ async def cloud_chat(
                     score = int(m.get("quality") or 0)
                     candidates.append((provider, mid, label, score, base + idx, base_url, api_key))
 
-            await _add_compat("puter", puter_key, _OPENAI_COMPAT_BASE_URLS["puter"])
-            await _add_compat("huggingface", huggingface_key, _OPENAI_COMPAT_BASE_URLS["huggingface"])
-            await _add_compat("groq", groq_key, _OPENAI_COMPAT_BASE_URLS["groq"])
-            await _add_compat("together", together_key, _OPENAI_COMPAT_BASE_URLS["together"])
-            await _add_compat("fireworks", fireworks_key, _OPENAI_COMPAT_BASE_URLS["fireworks"])
+            async for _ in _add_compat("puter", puter_key, _OPENAI_COMPAT_BASE_URLS["puter"]):
+                yield _
+            async for _ in _add_compat("huggingface", huggingface_key, _OPENAI_COMPAT_BASE_URLS["huggingface"]):
+                yield _
+            async for _ in _add_compat("groq", groq_key, _OPENAI_COMPAT_BASE_URLS["groq"]):
+                yield _
+            async for _ in _add_compat("together", together_key, _OPENAI_COMPAT_BASE_URLS["together"]):
+                yield _
+            async for _ in _add_compat("fireworks", fireworks_key, _OPENAI_COMPAT_BASE_URLS["fireworks"]):
+                yield _
             if router_key and router_base_url:
-                await _add_compat("router", router_key, router_base_url)
+                async for _ in _add_compat("router", router_key, router_base_url):
+                    yield _
 
             if not candidates:
                 yield f"data: {json.dumps({'error': 'No cloud models are available to try right now.', 'suggest_local': True, 'reason': 'No cloud models available to try.'})}\n\n"
