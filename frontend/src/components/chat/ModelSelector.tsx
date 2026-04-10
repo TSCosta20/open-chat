@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useChatStore } from "@/store/useChatStore";
 import { ALL_MODELS } from "@/types";
 
@@ -8,18 +9,28 @@ interface Props {
 }
 
 export function ModelSelector({ chatId }: Props) {
-  const model = useChatStore((s) => s.getModelForChat(chatId));
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // Avoid hydration mismatches by not reading localStorage (via getModelForChat)
+  // or rendering time-relative reset strings until after mount.
+  const model = useChatStore((s) => (mounted ? s.getModelForChat(chatId) : ""));
   const setModelReady = useChatStore((s) => s.setModelReady);
   const cloudInUse = useChatStore((s) => s.cloudModelInUse[chatId] ?? null);
   const cloudUsage = useChatStore((s) => s.cloudUsage[chatId] ?? null);
+
   const modelDef = ALL_MODELS.find((m) => m.id === model);
   const isOllama = model.startsWith("ollama:");
+  const name = !model
+    ? "Model"
+    : isOllama
+    ? model.slice(7)
+    : (modelDef?.name ?? model);
 
-  const name = isOllama ? model.slice(7) : (modelDef?.name ?? model);
   const isCloud = modelDef?.backend === "cloud" || modelDef?.backend === "chrome-ai";
 
   function formatReset(reset: number | null | undefined): string {
-    if (!reset) return "";
+    if (!mounted || !reset) return "";
     const nowSec = Date.now() / 1000;
     const tsSec = reset > 1_000_000_000 ? reset : nowSec + reset;
     const inSec = Math.max(0, Math.round(tsSec - nowSec));
@@ -41,24 +52,29 @@ export function ModelSelector({ chatId }: Props) {
       remaining !== null ? `remaining ${remaining}` : null,
       reset || null,
     ].filter(Boolean);
-    return parts.length ? `${kind}: ${parts.join(" Â· ")}` : "";
+    return parts.length ? `${kind}: ${parts.join(" · ")}` : "";
   }
 
-  const resolved = cloudInUse?.label ? `${cloudInUse.label}${cloudInUse.provider ? ` (${cloudInUse.provider})` : ""}` : "";
-  const titleLines = [
-    "Change model",
-    resolved ? `In use: ${resolved}` : null,
-    usageLine("requests") || null,
-    usageLine("tokens") || null,
-  ].filter(Boolean);
+  const title = useMemo(() => {
+    if (!mounted) return "Change model";
+    const resolved = cloudInUse?.label
+      ? `${cloudInUse.label}${cloudInUse.provider ? ` (${cloudInUse.provider})` : ""}`
+      : "";
+    const titleLines = [
+      "Change model",
+      resolved ? `In use: ${resolved}` : null,
+      usageLine("requests") || null,
+      usageLine("tokens") || null,
+    ].filter(Boolean);
+    return titleLines.join("\n");
+  }, [mounted, cloudInUse?.label, cloudInUse?.provider, cloudUsage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <button
       onClick={() => setModelReady(false)}
-      title={titleLines.join("\n")}
+      title={title}
       className="flex items-center gap-1.5 self-start rounded-lg border border-surface-border bg-surface-secondary px-2.5 py-1 text-xs text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
     >
-      {/* Cloud or device icon */}
       {isCloud ? (
         <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
@@ -72,14 +88,14 @@ export function ModelSelector({ chatId }: Props) {
       <span className="max-w-[180px] truncate">{name}</span>
       {isCloud && cloudInUse?.label && (
         <span className="max-w-[160px] truncate text-[10px] text-slate-500" title={`In use: ${cloudInUse.label}`}>
-          â†’ {cloudInUse.label}
+          → {cloudInUse.label}
         </span>
       )}
 
-      {/* Swap icon */}
       <svg className="h-3 w-3 shrink-0 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
       </svg>
     </button>
   );
 }
+
