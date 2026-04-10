@@ -401,13 +401,23 @@ async def _fetch_openai_compat_models(provider: str, api_key: str, base_url: str
     if cached and (now - cached[0]) < _COMPAT_CACHE_TTL:
         return cached[1]
 
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    if not api_key:
+        return []
+    headers = {"Authorization": f"Bearer {api_key}"}
     url = base_url.rstrip("/") + "/models"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code != 200:
-                raise HTTPException(status_code=502, detail=f"{provider} model list failed ({resp.status_code})")
+                body = ""
+                try:
+                    body = (await resp.aread()).decode(errors="ignore")[:220]
+                except Exception:
+                    body = ""
+                detail = f"{provider} model list failed ({resp.status_code})"
+                if body:
+                    detail = f"{detail}: {body}"
+                raise HTTPException(status_code=502, detail=detail)
             raw = resp.json().get("data", [])
             items: list[dict] = []
             for m in raw:
@@ -525,6 +535,9 @@ async def list_cloud_models(body: CloudModelListRequest):
     base_url = body.base_url or _OPENAI_COMPAT_BASE_URLS.get(provider, "")
     if not base_url:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+
+    if not body.api_key:
+        raise HTTPException(status_code=400, detail=f"{provider} API key required")
 
     models = await _fetch_openai_compat_models(provider, body.api_key, base_url)
     return {"data": models, "base_url": base_url}

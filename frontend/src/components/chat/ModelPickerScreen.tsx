@@ -90,12 +90,12 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [personalizationDraft, setPersonalizationDraft] = useState("");
   const [personalizationSaved, setPersonalizationSaved] = useState(false);
 
-  const { models: puterModels, loading: puterLoading, error: puterError } = useCloudProviderModels({ provider: "puter", apiKey: puterKey });
-  const { models: hfModels, loading: hfLoading, error: hfError } = useCloudProviderModels({ provider: "huggingface", apiKey: huggingFaceKey });
-  const { models: groqModels, loading: groqLoading, error: groqError } = useCloudProviderModels({ provider: "groq", apiKey: groqKey });
-  const { models: togetherModels, loading: togetherLoading, error: togetherError } = useCloudProviderModels({ provider: "together", apiKey: togetherKey });
-  const { models: fireworksModels, loading: fireworksLoading, error: fireworksError } = useCloudProviderModels({ provider: "fireworks", apiKey: fireworksKey });
-  const { models: routerModels, loading: routerLoading, error: routerError } = useCloudProviderModels({ provider: "router", apiKey: routerKey, baseUrl: routerBaseUrl });
+  const { models: puterModels, loading: puterLoading, error: puterError, errorMessage: puterErrorMessage } = useCloudProviderModels({ provider: "puter", apiKey: puterKey });
+  const { models: hfModels, loading: hfLoading, error: hfError, errorMessage: hfErrorMessage } = useCloudProviderModels({ provider: "huggingface", apiKey: huggingFaceKey });
+  const { models: groqModels, loading: groqLoading, error: groqError, errorMessage: groqErrorMessage } = useCloudProviderModels({ provider: "groq", apiKey: groqKey });
+  const { models: togetherModels, loading: togetherLoading, error: togetherError, errorMessage: togetherErrorMessage } = useCloudProviderModels({ provider: "together", apiKey: togetherKey });
+  const { models: fireworksModels, loading: fireworksLoading, error: fireworksError, errorMessage: fireworksErrorMessage } = useCloudProviderModels({ provider: "fireworks", apiKey: fireworksKey });
+  const { models: routerModels, loading: routerLoading, error: routerError, errorMessage: routerErrorMessage } = useCloudProviderModels({ provider: "router", apiKey: routerKey, baseUrl: routerBaseUrl });
 
   const {
     level: personalizationLevel,
@@ -369,6 +369,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 models: puterModels,
                 loading: puterLoading,
                 error: puterError,
+                errorMessage: puterErrorMessage,
                 hasKey: !!puterKey,
                 noteWhenNoKey: "— auth token required",
                 onSelect: (id) => setModelForChat(chatId, `cloud:puter:${id}`),
@@ -382,6 +383,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 models: hfModels,
                 loading: hfLoading,
                 error: hfError,
+                errorMessage: hfErrorMessage,
                 hasKey: !!huggingFaceKey,
                 noteWhenNoKey: "— token required",
                 onSelect: (id) => setModelForChat(chatId, `cloud:huggingface:${id}`),
@@ -395,6 +397,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 models: groqModels,
                 loading: groqLoading,
                 error: groqError,
+                errorMessage: groqErrorMessage,
                 hasKey: !!groqKey,
                 noteWhenNoKey: "— key required",
                 onSelect: (id) => setModelForChat(chatId, `cloud:groq:${id}`),
@@ -408,6 +411,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 models: togetherModels,
                 loading: togetherLoading,
                 error: togetherError,
+                errorMessage: togetherErrorMessage,
                 hasKey: !!togetherKey,
                 noteWhenNoKey: "— key required",
                 onSelect: (id) => setModelForChat(chatId, `cloud:together:${id}`),
@@ -421,6 +425,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 models: fireworksModels,
                 loading: fireworksLoading,
                 error: fireworksError,
+                errorMessage: fireworksErrorMessage,
                 hasKey: !!fireworksKey,
                 noteWhenNoKey: "— key required",
                 onSelect: (id) => setModelForChat(chatId, `cloud:fireworks:${id}`),
@@ -434,6 +439,7 @@ export function ModelPickerScreen({ chatId }: Props) {
                 models: routerModels,
                 loading: routerLoading,
                 error: routerError,
+                errorMessage: routerErrorMessage,
                 hasKey: !!routerKey && !!routerBaseUrl,
                 noteWhenNoKey: "— base URL + key required",
                 onSelect: (id) => setModelForChat(chatId, `cloud:router:${id}`),
@@ -1151,6 +1157,7 @@ function renderCompatProviderSection(opts: {
   models: Array<{ id: string; name: string; quality?: number }>;
   loading: boolean;
   error: boolean;
+  errorMessage?: string;
   hasKey: boolean;
   noteWhenNoKey: string;
   onSelect: (id: string) => void;
@@ -1182,7 +1189,7 @@ function renderCompatProviderSection(opts: {
         </div>
       ) : opts.error ? (
         <div className="px-4 py-3 text-xs text-slate-500">
-          Could not load model list â€” check your key and connection.
+          Could not load model list — {opts.errorMessage ? opts.errorMessage : "check your key and connection"}.
         </div>
       ) : opts.models.length === 0 ? (
         <div className="px-4 py-3 text-xs text-slate-500">No models found.</div>

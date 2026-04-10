@@ -19,7 +19,7 @@ export function useCloudProviderModels(opts: {
   provider: string;
   apiKey?: string;
   baseUrl?: string;
-}): { models: CloudProviderModel[]; loading: boolean; error: boolean } {
+}): { models: CloudProviderModel[]; loading: boolean; error: boolean; errorMessage: string } {
   const provider = (opts.provider ?? "").toLowerCase();
   const apiKey = opts.apiKey?.trim() ?? "";
   const baseUrl = opts.baseUrl?.trim() ?? "";
@@ -27,6 +27,7 @@ export function useCloudProviderModels(opts: {
   const [models, setModels] = useState<CloudProviderModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     if (!provider) return;
@@ -35,12 +36,14 @@ export function useCloudProviderModels(opts: {
       setModels([]);
       setLoading(false);
       setError(false);
+      setErrorMessage("");
       return;
     }
     if (provider !== "gemini" && !apiKey) {
       setModels([]);
       setLoading(false);
       setError(false);
+      setErrorMessage("");
       return;
     }
 
@@ -63,6 +66,7 @@ export function useCloudProviderModels(opts: {
     const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
     setLoading(true);
     setError(false);
+    setErrorMessage("");
 
     fetch(`${API_URL}/models/cloud/list`, {
       method: "POST",
@@ -74,11 +78,14 @@ export function useCloudProviderModels(opts: {
       }),
     })
       .then((r) => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.json();
+        return r.json().catch(() => ({})).then((j) => ({ ok: r.ok, status: r.status, json: j }));
       })
-      .then((json) => {
-        const data: CloudProviderModel[] = (json.data as any[]).map((m) => ({
+      .then(({ ok, status, json }) => {
+        if (!ok) {
+          const detail = (json as any)?.detail || (json as any)?.error || "";
+          throw new Error(detail ? `${status}: ${detail}` : `${status}`);
+        }
+        const data: CloudProviderModel[] = ((json as any).data as any[]).map((m) => ({
           id: m.id,
           name: m.name ?? m.id,
           provider: m.provider ?? provider,
@@ -91,10 +98,12 @@ export function useCloudProviderModels(opts: {
           // ignore storage errors
         }
       })
-      .catch(() => setError(true))
+      .catch((e) => {
+        setError(true);
+        setErrorMessage(e instanceof Error ? e.message : "Failed to load models");
+      })
       .finally(() => setLoading(false));
   }, [provider, apiKey, baseUrl]);
 
-  return { models, loading, error };
+  return { models, loading, error, errorMessage };
 }
-
