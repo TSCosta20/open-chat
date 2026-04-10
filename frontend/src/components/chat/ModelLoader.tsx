@@ -9,7 +9,8 @@ interface Props {
 }
 
 export function ModelLoader({ chatId }: Props) {
-  const model = useChatStore((s) => s.getModelForChat(chatId));
+  void chatId;
+
   const modelReady = useChatStore((s) => s.modelReady);
   const progress = useChatStore((s) => s.modelLoadProgress);
   const status = useChatStore((s) => s.modelLoadStatus);
@@ -33,11 +34,10 @@ export function ModelLoader({ chatId }: Props) {
     <div className="mx-auto max-w-3xl px-4 py-3">
       <div className="rounded-xl border border-surface-border bg-surface-secondary p-4 space-y-3">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-300 font-medium">Loading model…</span>
+          <span className="text-slate-300 font-medium">Loading model...</span>
           <span className="text-slate-500 text-xs">{progress}%</span>
         </div>
 
-        {/* Progress bar */}
         <div className="h-1.5 w-full rounded-full bg-surface-primary overflow-hidden">
           <div
             className={clsx(

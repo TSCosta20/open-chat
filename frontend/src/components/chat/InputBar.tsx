@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import clsx from "clsx";
 import { useChatStore } from "@/store/useChatStore";
 import { useChat } from "@/hooks/useChat";
@@ -15,28 +15,31 @@ interface Props {
 }
 
 export function InputBar({ chatId, centered = false }: Props) {
+  const [mounted, setMounted] = useState(false);
   const [input, setInput] = useState("");
   const [voiceMode, setVoiceMode] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useChatStore((s) => s.isStreaming[chatId] ?? false);
   const modelReady = useChatStore((s) => s.modelReady);
-  const selectedModel = useChatStore((s) => s.getModelForChat(chatId));
+  const selectedModel = useChatStore((s) => (mounted ? s.getModelForChat(chatId) : ""));
   const cloudInUse = useChatStore((s) => s.cloudModelInUse[chatId] ?? null);
   const { sendMessage } = useChat(chatId);
+
+  useEffect(() => setMounted(true), []);
 
   const modelDef = ALL_MODELS.find((m) => m.id === selectedModel);
   const disclaimer =
     modelDef?.backend === "cloud"
       ? cloudInUse?.label
-        ? `Cloud • using ${cloudInUse.label}`
+        ? `Cloud · using ${cloudInUse.label}`
         : modelDef.cloudModelId?.startsWith("gemini-")
-        ? "Responses processed by Google Gemini"
-        : modelDef.cloudModelId === "auto"
-        ? "Cloud • best available"
-        : "Responses processed by cloud inference"
+          ? "Responses processed by Google Gemini"
+          : modelDef.cloudModelId === "auto"
+            ? "Cloud · best available"
+            : "Responses processed by cloud inference"
       : modelDef?.backend === "chrome-ai"
-      ? "Runs in Chrome's built-in AI — no data leaves your device"
-      : "Runs entirely on your device · no data leaves your browser";
+        ? "Runs in Chrome's built-in AI — no data leaves your device"
+        : "Runs entirely on your device · no data leaves your browser";
 
   const disabled = isStreaming || !modelReady;
 
@@ -54,7 +57,6 @@ export function InputBar({ chatId, centered = false }: Props) {
   const { isListening, startListening, stopListening, supported } = useVoiceInput(
     (transcript) => {
       setInput(transcript);
-      // Auto-submit in voice mode
       if (voiceMode) {
         handleSubmit(transcript, true);
       }
@@ -114,18 +116,17 @@ export function InputBar({ chatId, centered = false }: Props) {
               rows={1}
               placeholder={
                 isListening
-                  ? "Listening…"
+                  ? "Listening..."
                   : !modelReady
-                  ? "Waiting for model to load…"
-                  : isStreaming
-                  ? "Waiting for response…"
-                  : "Ask anything"
+                    ? "Waiting for model to load..."
+                    : isStreaming
+                      ? "Waiting for response..."
+                      : "Ask anything"
               }
               className="flex-1 resize-none bg-transparent text-sm text-slate-100 placeholder-slate-500 outline-none disabled:cursor-not-allowed"
               style={{ maxHeight: "200px" }}
             />
 
-            {/* Mic button */}
             {supported && (
               <button
                 onClick={isListening ? stopListening : (voiceMode ? toggleVoiceMode : startListening)}
@@ -135,8 +136,8 @@ export function InputBar({ chatId, centered = false }: Props) {
                   isListening
                     ? "bg-red-500 text-white animate-pulse"
                     : voiceMode
-                    ? "bg-accent/20 text-accent"
-                    : "text-slate-500 hover:text-slate-300 disabled:cursor-not-allowed"
+                      ? "bg-accent/20 text-accent"
+                      : "text-slate-500 hover:text-slate-300 disabled:cursor-not-allowed"
                 )}
                 aria-label={isListening ? "Stop listening" : "Voice input"}
                 title={isListening ? "Stop" : voiceMode ? "Voice mode on" : "Voice input"}
@@ -148,7 +149,6 @@ export function InputBar({ chatId, centered = false }: Props) {
               </button>
             )}
 
-            {/* Live conversation toggle */}
             {supported && (
               <button
                 onClick={toggleVoiceMode}
@@ -168,7 +168,6 @@ export function InputBar({ chatId, centered = false }: Props) {
               </button>
             )}
 
-            {/* Send button */}
             <button
               onClick={() => handleSubmit()}
               disabled={disabled || !input.trim()}

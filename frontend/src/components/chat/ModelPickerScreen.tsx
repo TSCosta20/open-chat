@@ -30,11 +30,12 @@ type Tab = "cloud" | "transformers" | "webllm" | "ollama";
 interface Props { chatId: string }
 
 export function ModelPickerScreen({ chatId }: Props) {
+  const [mounted, setMounted] = useState(false);
   const store = useChatStore();
   const modelReady    = useChatStore((s) => s.modelReady);
   const progress      = useChatStore((s) => s.modelLoadProgress);
   const status        = useChatStore((s) => s.modelLoadStatus);
-  const selectedModel = useChatStore((s) => s.getModelForChat(chatId));
+  const selectedModel = useChatStore((s) => (mounted ? s.getModelForChat(chatId) : ""));
   const setModelForChat = useChatStore((s) => s.setModelForChat);
   const cap           = useDeviceCapability();
   const { loadModel: loadWebLLM }       = useWebLLM();
@@ -104,6 +105,7 @@ export function ModelPickerScreen({ chatId }: Props) {
     saveInstructions: savePersonalizationInstructions,
   } = usePersonalization();
 
+  useEffect(() => { setMounted(true); }, []);
   useEffect(() => { checkChromeAI().then(setChromeStatus); }, []);
   useEffect(() => { checkOllama().then(setOllamaResult); }, []);
   useEffect(() => {

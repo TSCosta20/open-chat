@@ -12,8 +12,6 @@ export function ModelSelector({ chatId }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // Avoid hydration mismatches by not reading localStorage (via getModelForChat)
-  // or rendering time-relative reset strings until after mount.
   const model = useChatStore((s) => (mounted ? s.getModelForChat(chatId) : ""));
   const setModelReady = useChatStore((s) => s.setModelReady);
   const cloudInUse = useChatStore((s) => s.cloudModelInUse[chatId] ?? null);
@@ -24,8 +22,8 @@ export function ModelSelector({ chatId }: Props) {
   const name = !model
     ? "Model"
     : isOllama
-    ? model.slice(7)
-    : (modelDef?.name ?? model);
+      ? model.slice(7)
+      : (modelDef?.name ?? model);
 
   const isCloud = modelDef?.backend === "cloud" || modelDef?.backend === "chrome-ai";
 
@@ -67,7 +65,7 @@ export function ModelSelector({ chatId }: Props) {
       usageLine("tokens") || null,
     ].filter(Boolean);
     return titleLines.join("\n");
-  }, [mounted, cloudInUse?.label, cloudInUse?.provider, cloudUsage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mounted, cloudInUse, cloudUsage]);
 
   return (
     <button
@@ -98,4 +96,3 @@ export function ModelSelector({ chatId }: Props) {
     </button>
   );
 }
-

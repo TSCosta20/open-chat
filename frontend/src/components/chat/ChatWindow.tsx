@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useChatStore } from "@/store/useChatStore";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { MessageBubble, StreamingBubble } from "./MessageBubble";
@@ -11,6 +11,7 @@ interface Props {
 }
 
 export function ChatWindow({ chatId }: Props) {
+  const [mounted, setMounted] = useState(false);
   const messages = useChatStore((s) => s.messages[chatId] ?? []);
   const streamingContent = useChatStore((s) => s.streamingContent[chatId]);
   const isStreaming = useChatStore((s) => s.isStreaming[chatId] ?? false);
@@ -19,16 +20,18 @@ export function ChatWindow({ chatId }: Props) {
   const cloudUsage = useChatStore((s) => s.cloudUsage[chatId]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => setMounted(true), []);
   useAutoScroll(bottomRef, [messages, streamingContent]);
 
   const showTypingDots = isStreaming && !streamingContent && !cloudStatus;
   const showCloudMeta = !!cloudModel && (isStreaming || !!cloudStatus || !!streamingContent);
 
   function formatReset(reset: unknown): string | null {
+    if (!mounted) return null;
+
     const n = typeof reset === "number" ? reset : Number(reset);
     if (!Number.isFinite(n) || n <= 0) return null;
 
-    // Heuristic: large values are epoch seconds, small values are seconds-from-now.
     const ms = n > 1_000_000_000 ? n * 1000 : Date.now() + n * 1000;
     const d = new Date(ms);
 
