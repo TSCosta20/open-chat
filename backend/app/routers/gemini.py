@@ -1,5 +1,6 @@
 """Cloud inference router — supports Google Gemini (own key) and OpenRouter free models."""
 import os
+import asyncio
 import json
 import uuid
 import time
@@ -661,7 +662,14 @@ async def _stream_openrouter(model: str, history: list, new_content: str, api_ke
     }
     body = {"model": model, "messages": messages, "stream": True}
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    timeout = httpx.Timeout(
+        60.0,
+        connect=8.0,
+        read=float(os.environ.get("CLOUD_STREAM_READ_TIMEOUT_S", "20") or 20),
+        write=10.0,
+        pool=10.0,
+    )
+    async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", _OPENROUTER_URL, json=body, headers=headers) as resp:
             if resp.status_code != 200:
                 err_body = await resp.aread()
@@ -725,7 +733,14 @@ async def _stream_openai_compat(provider: str, base_url: str, model: str, histor
     }
     body = {"model": model, "messages": messages, "stream": True}
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    timeout = httpx.Timeout(
+        60.0,
+        connect=8.0,
+        read=float(os.environ.get("CLOUD_STREAM_READ_TIMEOUT_S", "20") or 20),
+        write=10.0,
+        pool=10.0,
+    )
+    async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", url, json=body, headers=headers) as resp:
             meta = _parse_openrouter_ratelimits(resp.headers)
             if meta:
@@ -894,7 +909,8 @@ async def cloud_chat(
             }
 
             if openrouter_key:
-                or_models = await _fetch_or_free_models_detailed(openrouter_key)
+                # Use unauthenticated model listing for stability; completions still require the user's key.
+                or_models = await _fetch_or_free_models_detailed()
                 models_by_provider["openrouter"] = or_models
                 for idx, m in enumerate(or_models):
                     mid = m.get("id") or ""
@@ -957,8 +973,15 @@ async def cloud_chat(
 
             last_error: str | None = None
             attempted = 0
+            started_at = time.time()
+            total_budget_s = int(os.environ.get("CLOUD_AUTO_BUDGET_S", "25") or 25)
 
             for provider, model_id, model_label, _, _, base_url, api_key in candidates:
+                elapsed = time.time() - started_at
+                if elapsed >= total_budget_s:
+                    last_error = "timeout"
+                    break
+
                 attempted += 1
                 yield _status(f"Trying {model_label}...")
 
@@ -966,56 +989,61 @@ async def cloud_chat(
                 error_text: str | None = None
 
                 try:
-                    if provider == "gemini":
-                        async for token, error, _meta in _stream_gemini(model_id, history, body.content, api_key):
-                            if error:
-                                error_text = error
-                                break
-                            if token and not got_token:
-                                yield f"data: {json.dumps({'type': 'model', 'provider': 'gemini', 'id': model_id, 'label': model_label})}\n\n"
-                                yield _status("")
-                                got_token = True
-                            if token:
-                                full_text += token
-                                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
-                    elif provider == "openrouter":
-                        sent_usage = False
-                        async for token, error, meta in _stream_openrouter(model_id, history, body.content, api_key):
-                            if meta and not sent_usage:
-                                sent_usage = True
-                                yield f"data: {json.dumps({'type': 'usage', 'provider': 'openrouter', 'id': model_id, 'usage': meta})}\n\n"
-                                ra = meta.get("retryAfter")
-                                if isinstance(ra, int) and ra > 0:
-                                    best_retry_after_s = ra if best_retry_after_s is None else min(best_retry_after_s, ra)
-                            if error:
-                                error_text = error
-                                break
-                            if token and not got_token:
-                                yield f"data: {json.dumps({'type': 'model', 'provider': 'openrouter', 'id': model_id, 'label': model_label})}\n\n"
-                                yield _status("")
-                                got_token = True
-                            if token:
-                                full_text += token
-                                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
-                    else:
-                        sent_usage = False
-                        async for token, error, meta in _stream_openai_compat(provider, base_url, model_id, history, body.content, api_key):
-                            if meta and not sent_usage:
-                                sent_usage = True
-                                yield f"data: {json.dumps({'type': 'usage', 'provider': provider, 'id': model_id, 'usage': meta})}\n\n"
-                                ra = meta.get("retryAfter")
-                                if isinstance(ra, int) and ra > 0:
-                                    best_retry_after_s = ra if best_retry_after_s is None else min(best_retry_after_s, ra)
-                            if error:
-                                error_text = error
-                                break
-                            if token and not got_token:
-                                yield f"data: {json.dumps({'type': 'model', 'provider': provider, 'id': model_id, 'label': model_label})}\n\n"
-                                yield _status("")
-                                got_token = True
-                            if token:
-                                full_text += token
-                                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                    remaining = max(1, int(total_budget_s - (time.time() - started_at)))
+                    per_try_s = min(18, remaining)
+                    async with asyncio.timeout(per_try_s):
+                        if provider == "gemini":
+                            async for token, error, _meta in _stream_gemini(model_id, history, body.content, api_key):
+                                if error:
+                                    error_text = error
+                                    break
+                                if token and not got_token:
+                                    yield f"data: {json.dumps({'type': 'model', 'provider': 'gemini', 'id': model_id, 'label': model_label})}\n\n"
+                                    yield _status("")
+                                    got_token = True
+                                if token:
+                                    full_text += token
+                                    yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                        elif provider == "openrouter":
+                            sent_usage = False
+                            async for token, error, meta in _stream_openrouter(model_id, history, body.content, api_key):
+                                if meta and not sent_usage:
+                                    sent_usage = True
+                                    yield f"data: {json.dumps({'type': 'usage', 'provider': 'openrouter', 'id': model_id, 'usage': meta})}\n\n"
+                                    ra = meta.get("retryAfter")
+                                    if isinstance(ra, int) and ra > 0:
+                                        best_retry_after_s = ra if best_retry_after_s is None else min(best_retry_after_s, ra)
+                                if error:
+                                    error_text = error
+                                    break
+                                if token and not got_token:
+                                    yield f"data: {json.dumps({'type': 'model', 'provider': 'openrouter', 'id': model_id, 'label': model_label})}\n\n"
+                                    yield _status("")
+                                    got_token = True
+                                if token:
+                                    full_text += token
+                                    yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                        else:
+                            sent_usage = False
+                            async for token, error, meta in _stream_openai_compat(provider, base_url, model_id, history, body.content, api_key):
+                                if meta and not sent_usage:
+                                    sent_usage = True
+                                    yield f"data: {json.dumps({'type': 'usage', 'provider': provider, 'id': model_id, 'usage': meta})}\n\n"
+                                    ra = meta.get("retryAfter")
+                                    if isinstance(ra, int) and ra > 0:
+                                        best_retry_after_s = ra if best_retry_after_s is None else min(best_retry_after_s, ra)
+                                if error:
+                                    error_text = error
+                                    break
+                                if token and not got_token:
+                                    yield f"data: {json.dumps({'type': 'model', 'provider': provider, 'id': model_id, 'label': model_label})}\n\n"
+                                    yield _status("")
+                                    got_token = True
+                                if token:
+                                    full_text += token
+                                    yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+                except TimeoutError:
+                    error_text = "unavailable"
                 except Exception:
                     error_text = "unavailable"
 
@@ -1062,6 +1090,8 @@ async def cloud_chat(
                 msg = last_error or "No cloud models are available right now. Please try again."
                 # Pick a concise primary reason for the UI.
                 primary = "unknown"
+                if last_error == "timeout":
+                    primary = "unavailable"
                 for key in ("invalid_key", "quota_exceeded", "rate_limited", "unavailable", "provider_error", "other"):
                     if reason_counts.get(key, 0) > 0:
                         primary = key
@@ -1075,6 +1105,9 @@ async def cloud_chat(
                     "other": "Cloud request failed.",
                     "unknown": "Cloud request failed.",
                 }.get(primary, "Cloud request failed.")
+
+                if last_error == "timeout":
+                    reason_msg = f"Cloud request timed out (budget ~{total_budget_s}s). Try again or pick a specific model."
 
                 if primary == "rate_limited":
                     if best_retry_after_s is not None:
