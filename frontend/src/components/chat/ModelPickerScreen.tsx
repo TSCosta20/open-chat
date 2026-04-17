@@ -50,6 +50,7 @@ export function ModelPickerScreen({ chatId }: Props) {
   const [tab, setTab]                   = useState<Tab>(pickerLocalOnly ? "transformers" : "cloud");
   const [chromeStatus, setChromeStatus] = useState<ChromeAIStatus>("unavailable");
   const [ollamaResult, setOllamaResult] = useState<OllamaCheckResult | "loading">("loading");
+  const [showAdvancedProviders, setShowAdvancedProviders] = useState(false);
   const {
     openRouterKey,
     geminiKey,
@@ -192,8 +193,8 @@ export function ModelPickerScreen({ chatId }: Props) {
 
   const TABS: { id: Tab; label: string }[] = [
     ...(!pickerLocalOnly ? [{ id: "cloud" as Tab, label: "Cloud" }] : []),
-    { id: "transformers", label: "Transformers.js" },
-    { id: "webllm",       label: "WebLLM" },
+    { id: "transformers", label: "Browser (lite)" },
+    { id: "webllm",       label: "Browser (full)" },
     { id: "ollama",       label: "Ollama" },
   ];
 
@@ -205,7 +206,10 @@ export function ModelPickerScreen({ chatId }: Props) {
         {/* Title */}
         <div className="text-center">
           <h2 className="text-lg font-semibold text-white">Choose a model</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Cloud = instant · On-device = private &amp; free</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            <span className="text-slate-300">Cloud</span> — instant, needs a free API key ·{" "}
+            <span className="text-slate-300">On-device</span> — private, runs in your browser
+          </p>
         </div>
 
         {/* Tab bar */}
@@ -448,8 +452,11 @@ export function ModelPickerScreen({ chatId }: Props) {
               })}
             </>}
 
-            {/* ── Transformers.js ────────────────────────────────── */}
+            {/* ── Browser (lite) ─────────────────────────────────── */}
             {tab === "transformers" && <>
+              <div className="px-4 py-2.5 bg-black/20 border-b border-surface-border text-xs text-slate-500 leading-relaxed">
+                Smaller models (300 MB – 1 GB) that download once and run fully in your browser. Fast to start, no GPU required.
+              </div>
               {cap.ready && cap.isLowEnd && (
                 <div className="px-4 py-3 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300 leading-relaxed">
                   Your device has a low-end GPU (~{cap.estimatedVramGB.toFixed(1)} GB VRAM). Only very small models are allowed. <strong className="text-amber-200">Cloud is recommended</strong> for best results.
@@ -476,6 +483,9 @@ export function ModelPickerScreen({ chatId }: Props) {
 
             {/* ── WebLLM ─────────────────────────────────────────── */}
             {tab === "webllm" && <>
+              <div className="px-4 py-2.5 bg-black/20 border-b border-surface-border text-xs text-slate-500 leading-relaxed">
+                Larger, more capable models (1–8 GB) that run entirely in your browser using your GPU. Requires Chrome 113+ or Edge 113+.
+              </div>
               {cap.ready && cap.isLowEnd && (
                 <div className="px-4 py-3 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300 leading-relaxed">
                   Your device has a low-end GPU (~{cap.estimatedVramGB.toFixed(1)} GB VRAM). Only very small models are allowed. <strong className="text-amber-200">Cloud is recommended</strong> for best results.
@@ -627,16 +637,17 @@ export function ModelPickerScreen({ chatId }: Props) {
         {tab === "cloud" && (
           <div className="rounded-xl border border-surface-border bg-surface-secondary divide-y divide-surface-border overflow-hidden">
 
-            {/* OpenRouter */}
+            {/* OpenRouter — recommended, always visible */}
             <div className="p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300">OpenRouter key</p>
-                {openRouterKey
-                  ? <Pill green>saved</Pill>
-                  : <Pill yellow>required for free models</Pill>}
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-slate-300">OpenRouter key</p>
+                  {!openRouterKey && <Pill green>recommended · free</Pill>}
+                </div>
+                {openRouterKey && <Pill green>saved</Pill>}
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Free — no credit card needed.{" "}
+                Free — no credit card needed. Go to{" "}
                 <a
                   href="https://openrouter.ai/keys"
                   target="_blank"
@@ -644,8 +655,8 @@ export function ModelPickerScreen({ chatId }: Props) {
                   className="text-accent underline hover:text-accent-hover"
                 >
                   openrouter.ai/keys
-                </a>{" "}
-                → Sign in → Create key → copy it below.
+                </a>
+                , sign in, create a key, and paste it here.
               </p>
               <div className="flex gap-2">
                 <input
@@ -665,16 +676,16 @@ export function ModelPickerScreen({ chatId }: Props) {
               </div>
             </div>
 
-            {/* Gemini */}
+            {/* Gemini — second most common, always visible */}
             <div className="p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-slate-300">Gemini key</p>
                 {geminiKey
                   ? <Pill green>saved</Pill>
-                  : <Pill blue>optional</Pill>}
+                  : <Pill blue>optional · 1,500 free/day</Pill>}
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                1,500 free requests/day.{" "}
+                Go to{" "}
                 <a
                   href="https://aistudio.google.com/app/apikey"
                   target="_blank"
@@ -682,8 +693,8 @@ export function ModelPickerScreen({ chatId }: Props) {
                   className="text-accent underline hover:text-accent-hover"
                 >
                   aistudio.google.com/app/apikey
-                </a>{" "}
-                → Get API key → copy it below.
+                </a>
+                , click <strong className="text-slate-400">Get API key</strong>, and paste it here.
               </p>
               <div className="flex gap-2">
                 <input
@@ -703,223 +714,210 @@ export function ModelPickerScreen({ chatId }: Props) {
               </div>
             </div>
 
-            {/* Puter */}
-            <div className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300">Puter auth token</p>
-                {puterKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
-              </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                OpenAI-compatible endpoint via your Puter account token.{" "}
-                <a
-                  href="https://puter.com/dashboard"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent underline hover:text-accent-hover"
-                >
-                  puter.com/dashboard
-                </a>{" "}
-                â†’ Copy auth token.
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={puterKey ? "pt-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "Paste token..."}
-                  value={puterDraft}
-                  onChange={(e) => { setPuterDraft(e.target.value); setPuterSaved(false); }}
-                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
-                />
-                <button
-                  onClick={() => { savePuterKey(puterDraft); setPuterDraft(""); setPuterSaved(true); }}
-                  disabled={!puterDraft.trim()}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
-                >
-                  {puterSaved ? "Saved âœ“" : "Save"}
-                </button>
-              </div>
-            </div>
+            {/* More providers toggle */}
+            <button
+              onClick={() => setShowAdvancedProviders((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
+            >
+              <span>{showAdvancedProviders ? "Hide" : "More providers"} — Groq, Puter, HuggingFace, Together, Fireworks, custom router</span>
+              <svg
+                className={clsx("h-3.5 w-3.5 shrink-0 transition-transform", showAdvancedProviders && "rotate-180")}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
 
-            {/* Hugging Face */}
-            <div className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300">Hugging Face token</p>
-                {huggingFaceKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+            {showAdvancedProviders && <>
+              {/* Puter */}
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-300">Puter auth token</p>
+                  {puterKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  OpenAI-compatible endpoint via your Puter account.{" "}
+                  <a href="https://puter.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent-hover">
+                    puter.com/dashboard
+                  </a>{" "}
+                  → Copy auth token.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={puterKey ? "pt-••••••••" : "Paste token..."}
+                    value={puterDraft}
+                    onChange={(e) => { setPuterDraft(e.target.value); setPuterSaved(false); }}
+                    className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => { savePuterKey(puterDraft); setPuterDraft(""); setPuterSaved(true); }}
+                    disabled={!puterDraft.trim()}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                  >
+                    {puterSaved ? "Saved ✓" : "Save"}
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                Uses Hugging Face's OpenAI-compatible router endpoint.{" "}
-                <a
-                  href="https://huggingface.co/settings/tokens"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent underline hover:text-accent-hover"
-                >
-                  huggingface.co/settings/tokens
-                </a>
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={huggingFaceKey ? "hf_â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "hf_..."}
-                  value={hfDraft}
-                  onChange={(e) => { setHfDraft(e.target.value); setHfSaved(false); }}
-                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
-                />
-                <button
-                  onClick={() => { saveHuggingFaceKey(hfDraft); setHfDraft(""); setHfSaved(true); }}
-                  disabled={!hfDraft.trim()}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
-                >
-                  {hfSaved ? "Saved âœ“" : "Save"}
-                </button>
-              </div>
-            </div>
 
-            {/* Groq */}
-            <div className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300">Groq key</p>
-                {groqKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              {/* Hugging Face */}
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-300">Hugging Face token</p>
+                  {huggingFaceKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent-hover">
+                    huggingface.co/settings/tokens
+                  </a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={huggingFaceKey ? "hf_••••••••" : "hf_..."}
+                    value={hfDraft}
+                    onChange={(e) => { setHfDraft(e.target.value); setHfSaved(false); }}
+                    className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => { saveHuggingFaceKey(hfDraft); setHfDraft(""); setHfSaved(true); }}
+                    disabled={!hfDraft.trim()}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                  >
+                    {hfSaved ? "Saved ✓" : "Save"}
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                OpenAI-compatible API.{" "}
-                <a
-                  href="https://console.groq.com/keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent underline hover:text-accent-hover"
-                >
-                  console.groq.com/keys
-                </a>
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={groqKey ? "gsk_â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "gsk_..."}
-                  value={groqDraft}
-                  onChange={(e) => { setGroqDraft(e.target.value); setGroqSaved(false); }}
-                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
-                />
-                <button
-                  onClick={() => { saveGroqKey(groqDraft); setGroqDraft(""); setGroqSaved(true); }}
-                  disabled={!groqDraft.trim()}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
-                >
-                  {groqSaved ? "Saved âœ“" : "Save"}
-                </button>
-              </div>
-            </div>
 
-            {/* Together */}
-            <div className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300">Together key</p>
-                {togetherKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              {/* Groq */}
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-300">Groq key</p>
+                  {groqKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent-hover">
+                    console.groq.com/keys
+                  </a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={groqKey ? "gsk_••••••••" : "gsk_..."}
+                    value={groqDraft}
+                    onChange={(e) => { setGroqDraft(e.target.value); setGroqSaved(false); }}
+                    className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => { saveGroqKey(groqDraft); setGroqDraft(""); setGroqSaved(true); }}
+                    disabled={!groqDraft.trim()}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                  >
+                    {groqSaved ? "Saved ✓" : "Save"}
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                OpenAI-compatible API.{" "}
-                <a
-                  href="https://api.together.xyz/settings/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent underline hover:text-accent-hover"
-                >
-                  api.together.xyz/settings/api-keys
-                </a>
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={togetherKey ? "together-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "Paste key..."}
-                  value={togetherDraft}
-                  onChange={(e) => { setTogetherDraft(e.target.value); setTogetherSaved(false); }}
-                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
-                />
-                <button
-                  onClick={() => { saveTogetherKey(togetherDraft); setTogetherDraft(""); setTogetherSaved(true); }}
-                  disabled={!togetherDraft.trim()}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
-                >
-                  {togetherSaved ? "Saved âœ“" : "Save"}
-                </button>
-              </div>
-            </div>
 
-            {/* Fireworks */}
-            <div className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300">Fireworks key</p>
-                {fireworksKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              {/* Together */}
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-300">Together AI key</p>
+                  {togetherKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <a href="https://api.together.xyz/settings/api-keys" target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent-hover">
+                    api.together.xyz/settings/api-keys
+                  </a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={togetherKey ? "together-••••••••" : "Paste key..."}
+                    value={togetherDraft}
+                    onChange={(e) => { setTogetherDraft(e.target.value); setTogetherSaved(false); }}
+                    className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => { saveTogetherKey(togetherDraft); setTogetherDraft(""); setTogetherSaved(true); }}
+                    disabled={!togetherDraft.trim()}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                  >
+                    {togetherSaved ? "Saved ✓" : "Save"}
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                OpenAI-compatible API.{" "}
-                <a
-                  href="https://app.fireworks.ai/settings/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent underline hover:text-accent-hover"
-                >
-                  app.fireworks.ai/settings/api-keys
-                </a>
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={fireworksKey ? "fw-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "Paste key..."}
-                  value={fireworksDraft}
-                  onChange={(e) => { setFireworksDraft(e.target.value); setFireworksSaved(false); }}
-                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
-                />
-                <button
-                  onClick={() => { saveFireworksKey(fireworksDraft); setFireworksDraft(""); setFireworksSaved(true); }}
-                  disabled={!fireworksDraft.trim()}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
-                >
-                  {fireworksSaved ? "Saved âœ“" : "Save"}
-                </button>
-              </div>
-            </div>
 
-            {/* Router (custom OpenAI-compatible) */}
-            <div className="p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300">Multi-model router</p>
-                {routerKey && routerBaseUrl ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+              {/* Fireworks */}
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-300">Fireworks AI key</p>
+                  {fireworksKey ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <a href="https://app.fireworks.ai/settings/api-keys" target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent-hover">
+                    app.fireworks.ai/settings/api-keys
+                  </a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={fireworksKey ? "fw-••••••••" : "Paste key..."}
+                    value={fireworksDraft}
+                    onChange={(e) => { setFireworksDraft(e.target.value); setFireworksSaved(false); }}
+                    className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => { saveFireworksKey(fireworksDraft); setFireworksDraft(""); setFireworksSaved(true); }}
+                    disabled={!fireworksDraft.trim()}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                  >
+                    {fireworksSaved ? "Saved ✓" : "Save"}
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                Use any OpenAI-compatible endpoint (ShareAI-style routers, LiteLLM, etc.).
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder={routerBaseUrl ? routerBaseUrl : "Base URL (e.g. https://example.com/v1)"}
-                  value={routerUrlDraft}
-                  onChange={(e) => { setRouterUrlDraft(e.target.value); setRouterSaved(false); }}
-                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
-                />
+
+              {/* Router (custom OpenAI-compatible) */}
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-300">Custom router</p>
+                  {routerKey && routerBaseUrl ? <Pill green>saved</Pill> : <Pill blue>optional</Pill>}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Any OpenAI-compatible endpoint (LiteLLM, ShareAI, etc.).
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder={routerBaseUrl ? routerBaseUrl : "Base URL (e.g. https://example.com/v1)"}
+                    value={routerUrlDraft}
+                    onChange={(e) => { setRouterUrlDraft(e.target.value); setRouterSaved(false); }}
+                    className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={routerKey ? "sk-••••••••" : "API key"}
+                    value={routerKeyDraft}
+                    onChange={(e) => { setRouterKeyDraft(e.target.value); setRouterSaved(false); }}
+                    className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => {
+                      if (routerUrlDraft.trim()) saveRouterBaseUrl(routerUrlDraft);
+                      if (routerKeyDraft.trim()) saveRouterKey(routerKeyDraft);
+                      setRouterUrlDraft("");
+                      setRouterKeyDraft("");
+                      setRouterSaved(true);
+                    }}
+                    disabled={!routerUrlDraft.trim() && !routerKeyDraft.trim()}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                  >
+                    {routerSaved ? "Saved ✓" : "Save"}
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={routerKey ? "sk-â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" : "API key"}
-                  value={routerKeyDraft}
-                  onChange={(e) => { setRouterKeyDraft(e.target.value); setRouterSaved(false); }}
-                  className="flex-1 rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent"
-                />
-                <button
-                  onClick={() => {
-                    if (routerUrlDraft.trim()) saveRouterBaseUrl(routerUrlDraft);
-                    if (routerKeyDraft.trim()) saveRouterKey(routerKeyDraft);
-                    setRouterUrlDraft("");
-                    setRouterKeyDraft("");
-                    setRouterSaved(true);
-                  }}
-                  disabled={!routerUrlDraft.trim() && !routerKeyDraft.trim()}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
-                >
-                  {routerSaved ? "Saved âœ“" : "Save"}
-                </button>
-              </div>
-            </div>
+            </>}
 
             {/* Personalization */}
             <div className="p-3 space-y-2">
@@ -933,34 +931,8 @@ export function ModelPickerScreen({ chatId }: Props) {
               </div>
 
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Add instructions the assistant should follow. Lower levels use fewer tokens (shorter preferences + less chat history).
+                Add instructions the assistant should always follow (e.g. tone, language, format).
               </p>
-
-              <div className="flex gap-2">
-                <select
-                  value={personalizationLevel}
-                  onChange={(e) => {
-                    setPersonalizationSaved(false);
-                    savePersonalizationLevel(e.target.value as PersonalizationLevel);
-                  }}
-                  className="rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-accent"
-                >
-                  <option value="low">Low token usage</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-
-                <button
-                  onClick={() => {
-                    savePersonalizationInstructions(personalizationDraft);
-                    setPersonalizationSaved(true);
-                  }}
-                  disabled={personalizationDraft.trim() === (personalizationInstructions ?? "").trim()}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
-                >
-                  Save
-                </button>
-              </div>
 
               <textarea
                 value={personalizationDraft}
@@ -970,9 +942,36 @@ export function ModelPickerScreen({ chatId }: Props) {
                 className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-accent resize-none"
               />
 
+              <div className="flex items-center gap-2">
+                <select
+                  value={personalizationLevel}
+                  onChange={(e) => {
+                    setPersonalizationSaved(false);
+                    savePersonalizationLevel(e.target.value as PersonalizationLevel);
+                  }}
+                  title="How much of the conversation history to include — higher uses more API tokens"
+                  className="rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-xs text-slate-400 outline-none focus:border-accent"
+                >
+                  <option value="low">Short memory</option>
+                  <option value="medium">Medium memory</option>
+                  <option value="high">Long memory</option>
+                </select>
+
+                <button
+                  onClick={() => {
+                    savePersonalizationInstructions(personalizationDraft);
+                    setPersonalizationSaved(true);
+                  }}
+                  disabled={personalizationDraft.trim() === (personalizationInstructions ?? "").trim()}
+                  className="ml-auto rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-accent-hover transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+
               {personalizationLevel === "low" && (
                 <p className="text-[11px] text-amber-300/80 leading-relaxed">
-                  Low token usage may forget older parts of the conversation.
+                  Short memory may forget older parts of long conversations.
                 </p>
               )}
             </div>
@@ -1187,7 +1186,7 @@ function renderCompatProviderSection(opts: {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
           </svg>
-          Loading modelsâ€¦
+          Loading models…
         </div>
       ) : opts.error ? (
         <div className="px-4 py-3 text-xs text-slate-500">

@@ -139,8 +139,8 @@ export function InputBar({ chatId, centered = false }: Props) {
                       ? "bg-accent/20 text-accent"
                       : "text-slate-500 hover:text-slate-300 disabled:cursor-not-allowed"
                 )}
-                aria-label={isListening ? "Stop listening" : "Voice input"}
-                title={isListening ? "Stop" : voiceMode ? "Voice mode on" : "Voice input"}
+                aria-label={isListening ? "Stop recording" : "Dictate — speak to fill the text box"}
+                title={isListening ? "Stop recording" : voiceMode ? "Recording (voice mode on)" : "Dictate — speak to fill the text box"}
               >
                 <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -159,8 +159,8 @@ export function InputBar({ chatId, centered = false }: Props) {
                     ? "bg-accent text-white"
                     : "text-slate-500 hover:text-slate-300 disabled:cursor-not-allowed"
                 )}
-                aria-label="Toggle live conversation"
-                title={voiceMode ? "Live conversation on — click to stop" : "Start live conversation"}
+                aria-label={voiceMode ? "Stop live conversation" : "Live conversation — speak and hear replies"}
+                title={voiceMode ? "Live conversation on — click to stop" : "Live conversation — speak and hear replies automatically"}
               >
                 <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
@@ -192,7 +192,10 @@ export function InputBar({ chatId, centered = false }: Props) {
             </button>
           </div>
 
-          <p className="text-center text-xs text-slate-600">{disclaimer}</p>
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs text-slate-600">{disclaimer}</p>
+            <p className="text-xs text-slate-700">Shift+Enter for new line</p>
+          </div>
         </div>
       </div>
     </div>

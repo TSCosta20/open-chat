@@ -2,9 +2,10 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
 export default auth((req) => {
-  if (!req.auth && req.nextUrl.pathname.startsWith("/chat")) {
-    return NextResponse.redirect(new URL("/sign-in", req.url));
-  }
+  // Auth is optional — the app works fully offline/locally without a session.
+  // Only redirect to sign-in for routes that explicitly require a backend account.
+  void req;
+  return NextResponse.next();
 });
 
 export const config = {

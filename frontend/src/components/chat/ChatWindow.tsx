@@ -65,8 +65,8 @@ export function ChatWindow({ chatId }: Props) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto scrollbar-thin">
       {messages.length === 0 && !isStreaming ? (
-        <div className="flex flex-1 items-center justify-center text-slate-500">
-          <p className="text-sm">Send a message to start the conversation</p>
+        <div className="flex flex-1 items-center justify-center px-6">
+          <p className="text-sm text-slate-600 text-center">Type below to start chatting</p>
         </div>
       ) : (
         <div className="flex flex-col py-4">

@@ -37,7 +37,7 @@ export function NewChatButton() {
     <button
       onClick={handleNew}
       disabled={creating}
-      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-surface-hover hover:text-white disabled:opacity-50"
+      className="flex w-full items-center gap-2 rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:border-slate-500 hover:bg-surface-hover hover:text-white disabled:opacity-50"
     >
       {creating ? (
         <svg className="h-4 w-4 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">

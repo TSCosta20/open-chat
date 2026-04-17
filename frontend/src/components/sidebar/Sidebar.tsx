@@ -43,8 +43,8 @@ function ModelStatus() {
 
   return (
     <div className="flex items-center gap-1.5 text-xs text-slate-500">
-      <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-      No model loaded
+      <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+      No model — open a chat to set up
     </div>
   );
 }
@@ -81,12 +81,17 @@ export function Sidebar() {
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-surface-border px-4 py-4">
-          <span className="text-base font-semibold text-white">open_chat</span>
+        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <svg className="h-4 w-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+            </svg>
+            <span className="text-sm font-semibold text-white">open_chat</span>
+          </div>
         </div>
 
         {/* New chat button */}
-        <div className="px-2 py-2">
+        <div className="px-3 pt-3 pb-1">
           <NewChatButton />
         </div>
 

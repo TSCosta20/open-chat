@@ -71,7 +71,7 @@ export function ModelSelector({ chatId }: Props) {
     <button
       onClick={() => setModelReady(false)}
       title={title}
-      className="flex items-center gap-1.5 self-start rounded-lg border border-surface-border bg-surface-secondary px-2.5 py-1 text-xs text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+      className="flex items-center gap-1.5 self-start rounded-lg border border-surface-border bg-surface-secondary px-2.5 py-1.5 text-xs text-slate-300 transition-colors hover:border-accent/60 hover:bg-white/5 hover:text-white"
     >
       {isCloud ? (
         <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

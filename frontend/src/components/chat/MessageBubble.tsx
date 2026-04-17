@@ -1,11 +1,44 @@
 "use client";
 
 import clsx from "clsx";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useChatStore } from "@/store/useChatStore";
 import { useChat } from "@/hooks/useChat";
 import type { Message } from "@/types";
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button
+      onClick={copy}
+      title={copied ? "Copied!" : "Copy response"}
+      className={clsx(
+        "flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors",
+        copied
+          ? "text-emerald-400"
+          : "text-slate-600 hover:text-slate-400"
+      )}
+    >
+      {copied ? (
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+        </svg>
+      ) : (
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+        </svg>
+      )}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
 
 // Shared markdown styles for assistant bubbles
 function Markdown({ content }: { content: string }) {
@@ -66,8 +99,11 @@ interface Props {
 }
 
 export function MessageBubble({ message }: Props) {
+  const [mounted, setMounted] = useState(false);
   const isUser = message.role === "user";
   const meta = useChatStore((s) => s.messageMeta[message.id] ?? null);
+
+  useEffect(() => setMounted(true), []);
 
   if (message.content.startsWith("__SUGGEST_LOCAL__")) {
     const prefix = "__SUGGEST_LOCAL__:";
@@ -77,31 +113,35 @@ export function MessageBubble({ message }: Props) {
   if (message.content === "__TOO_HEAVY__")        return <TooHeavyBubble />;
   if (message.content === "__SWITCHED_TO_CLOUD__") return <SwitchedToCloudBubble />;
 
+  const timeLabel = mounted && message.createdAt
+    ? new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
+
   return (
     <div
       className={clsx(
-        "flex items-start gap-3 px-4 py-3 animate-fade-in",
+        "group flex items-start gap-3 px-4 py-2 animate-fade-in",
         isUser ? "flex-row-reverse" : "flex-row"
       )}
     >
       {/* Avatar */}
       <div
         className={clsx(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-          isUser ? "bg-accent text-white" : "bg-slate-600 text-slate-300"
+          "mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+          isUser ? "bg-accent text-white" : "bg-slate-700 text-slate-300"
         )}
       >
         {isUser ? "U" : "AI"}
       </div>
 
-      {/* Bubble */}
-      <div className={clsx("max-w-[75%] flex flex-col", isUser && "items-end")}>
+      {/* Bubble + actions */}
+      <div className={clsx("max-w-[75%] flex flex-col gap-1", isUser && "items-end")}>
         {!isUser && meta?.label && (
           <div
-            className="mb-1 px-1 text-[10px] text-slate-500"
+            className="px-1 text-[10px] text-slate-600"
             title={meta.provider ? `${meta.label} (${meta.provider})` : meta.label}
           >
-            via {meta.label}
+            {meta.label}
           </div>
         )}
         <div
@@ -118,6 +158,17 @@ export function MessageBubble({ message }: Props) {
             </p>
           ) : (
             <Markdown content={message.content} />
+          )}
+        </div>
+
+        {/* Actions row — visible on hover */}
+        <div className={clsx(
+          "flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
+          isUser ? "flex-row-reverse" : "flex-row"
+        )}>
+          {!isUser && <CopyButton text={message.content} />}
+          {timeLabel && (
+            <span className="px-1 text-[11px] text-slate-700">{timeLabel}</span>
           )}
         </div>
       </div>
