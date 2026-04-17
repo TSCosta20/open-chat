@@ -1,8 +1,6 @@
-const CACHE_NAME = "open-chat-v1";
+const CACHE_NAME = "open-chat-v2";
 
 const STATIC_ASSETS = [
-  "/",
-  "/chat",
   "/offline.html",
   "/manifest.json",
 ];
@@ -33,38 +31,42 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch strategy:
-// - API calls & external requests: always network (never cached)
-// - Same-origin static: cache-first, fallback to network then offline.html
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET requests
   if (event.request.method !== "GET") return;
-
-  // Never intercept API/streaming calls — let them fail naturally when offline
   if (url.hostname !== self.location.hostname) return;
   if (url.pathname.startsWith("/api")) return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-
-      return fetch(event.request)
+  // Network-first for HTML navigation — ensures new deploys are visible immediately
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
         .then((response) => {
-          // Cache successful same-origin responses
           if (response.ok) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
           return response;
         })
-        .catch(() => {
-          // Offline fallback for navigation requests
-          if (event.request.mode === "navigate") {
-            return caches.match("/offline.html");
-          }
-        });
+        .catch(() =>
+          caches.match(event.request).then((cached) => cached || caches.match("/offline.html"))
+        )
+    );
+    return;
+  }
+
+  // Cache-first for static assets (JS, CSS, images, fonts)
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request).then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => undefined);
     })
   );
 });
