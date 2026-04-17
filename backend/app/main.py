@@ -59,8 +59,12 @@ app.include_router(chats.router)
 app.include_router(messages.router)
 app.include_router(gemini.router)
 
+if os.environ.get("DEBUG_FINGERPRINT_KEY"):
+    from app.routers import debug
+
+    app.include_router(debug.router)
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
