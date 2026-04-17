@@ -26,11 +26,28 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="open_chat API", version="1.0.0", lifespan=lifespan)
 
-origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+def _parse_cors_origins(value: str) -> list[str]:
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
+origins = _parse_cors_origins(os.environ.get("CORS_ORIGINS", "http://localhost:3000"))
+
+# Optional regex-based CORS allowlist (useful for preview deployments).
+# Example: ^https://frontend-.*\\.vercel\\.app$
+origin_regex = os.environ.get("CORS_ORIGIN_REGEX")
+
+if origin_regex is None and os.environ.get("CORS_ALLOW_VERCEL_PREVIEWS", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}:
+    origin_regex = r"^https://frontend-.*\.vercel\.app$"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,5 +63,4 @@ app.include_router(gemini.router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
